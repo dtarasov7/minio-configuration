@@ -1,0 +1,24 @@
+---
+- name: user-policy.yaml - read current direct policies
+  ansible.builtin.command:
+    argv: ["{{ minio_configuration_mc_binary_path }}", --json, admin, user, info, "{{ minio_configuration_alias }}", "{{ minio_configuration_policy_user.name }}"]
+  register: minio_configuration_user_info
+  changed_when: false
+  delegate_to: "{{ minio_configuration_delegate_host }}"
+
+- name: user-policy.yaml - calculate desired and current direct policies
+  ansible.builtin.set_fact:
+    minio_configuration_current_policies: "{{ (minio_configuration_user_info.stdout | from_json).policyName | default('') | split(',') | reject('equalto', '') | list }}"
+    minio_configuration_desired_policies: "{{ minio_configuration_policy_user | minio_configuration_policy_names('user') }}"
+
+- name: user-policy.yaml - detach policies absent from desired configuration
+  ansible.builtin.command:
+    argv: ["{{ minio_configuration_mc_binary_path }}", admin, policy, detach, "{{ minio_configuration_alias }}", "{{ item }}", --user, "{{ minio_configuration_policy_user.name }}"]
+  loop: "{{ minio_configuration_current_policies | difference(minio_configuration_desired_policies) }}"
+  delegate_to: "{{ minio_configuration_delegate_host }}"
+
+- name: user-policy.yaml - attach missing policies
+  ansible.builtin.command:
+    argv: ["{{ minio_configuration_mc_binary_path }}", admin, policy, attach, "{{ minio_configuration_alias }}", "{{ item }}", --user, "{{ minio_configuration_policy_user.name }}"]
+  loop: "{{ minio_configuration_desired_policies | difference(minio_configuration_current_policies) }}"
+  delegate_to: "{{ minio_configuration_delegate_host }}"

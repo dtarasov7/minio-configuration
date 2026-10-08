@@ -1,0 +1,56 @@
+---
+- name: Verify unsupported user permission fields are rejected
+  hosts: minio_cluster
+  gather_facts: false
+  vars:
+    ansible_os_family: RedHat
+    minio_configuration_no_log: false
+  tasks:
+    - name: Try unsupported user description
+      block:
+        - name: Run role preflight with unsupported fields
+          ansible.builtin.include_role:
+            name: minio-configuration
+            tasks_from: pre-req.yaml
+          vars:
+            minio_configuration_users:
+              - name: obsolete_format
+                access: READONLY
+                buckets: [b-default]
+      rescue:
+        - name: Record validation rejection
+          ansible.builtin.set_fact:
+            unsupported_fields_rejected: "{{ 'validate user definitions' in ansible_failed_task.name }}"
+
+    - name: Require validation rejection of unsupported permission fields
+      ansible.builtin.assert:
+        that:
+          - unsupported_fields_rejected | default(false) | bool
+
+    - name: Try duplicate Sid in one user description
+      block:
+        - name: Run role preflight with duplicate Sid
+          ansible.builtin.include_role:
+            name: minio-configuration
+            tasks_from: pre-req.yaml
+          vars:
+            minio_configuration_users:
+              - name: duplicated_rules
+                statements:
+                  - Sid: CopyPaste
+                    Effect: Allow
+                    Action: ['s3:GetObject']
+                    Resource: ['arn:aws:s3:::data/*']
+                  - Sid: CopyPaste
+                    Effect: Deny
+                    Action: ['s3:CreateBucket']
+                    Resource: ['arn:aws:s3:::*']
+      rescue:
+        - name: Record duplicate Sid rejection
+          ansible.builtin.set_fact:
+            duplicate_sid_rejected: "{{ 'reject duplicate Sid within one owner' in ansible_failed_task.name }}"
+
+    - name: Require duplicate Sid rejection before any server writes
+      ansible.builtin.assert:
+        that:
+          - duplicate_sid_rejected | default(false) | bool

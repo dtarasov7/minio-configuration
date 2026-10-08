@@ -1,0 +1,40 @@
+---
+- name: validate-policy.yaml - validate IAM document
+  ansible.builtin.assert:
+    that:
+      - minio_configuration_document is mapping
+      - minio_configuration_document.Version | default('') == '2012-10-17'
+      - minio_configuration_document.Statement is sequence
+      - minio_configuration_document.Statement is not string
+      - minio_configuration_document.Statement is not mapping
+      - minio_configuration_allow_empty_statements | default(false) | bool or minio_configuration_document.Statement | length > 0
+    fail_msg: 'An IAM document requires Version 2012-10-17 and a non-empty Statement list.'
+
+- name: validate-policy.yaml - validate IAM statements
+  ansible.builtin.assert:
+    that:
+      - item is mapping
+      - item.Effect | default('') in ['Allow', 'Deny']
+      - (item.Action is defined) != (item.NotAction is defined)
+      - (item.Resource is defined) != (item.NotResource is defined)
+      - item.Action | default(item.NotAction | default([])) | length > 0
+      - item.Resource | default(item.NotResource | default([])) | length > 0
+    fail_msg: 'Each statement requires Effect, Action (or NotAction), Resource (or NotResource).'
+  loop: "{{ minio_configuration_document.Statement }}"
+
+- name: validate-policy.yaml - require unique Sid values for owner rules
+  ansible.builtin.assert:
+    that:
+      - item.Sid is defined
+      - item.Sid is string
+      - item.Sid is match('^[A-Za-z0-9]+$')
+    fail_msg: 'Each user/group rule requires a non-empty Sid containing only letters and digits.'
+  loop: "{{ minio_configuration_document.Statement }}"
+  when: minio_configuration_require_sid | default(false) | bool
+
+- name: validate-policy.yaml - reject duplicate Sid within one owner
+  ansible.builtin.assert:
+    that:
+      - minio_configuration_document.Statement | map(attribute='Sid') | list | length == minio_configuration_document.Statement | map(attribute='Sid') | unique(case_sensitive=true) | list | length
+    fail_msg: 'Duplicate Sid in the rules of this user or group.'
+  when: minio_configuration_require_sid | default(false) | bool

@@ -1,0 +1,67 @@
+---
+minio_configuration_nodes_group: minio_cluster
+minio_configuration_delegate_host: "{{ groups[minio_configuration_nodes_group][0] | default(inventory_hostname) }}"
+minio_configuration_scheme: http
+minio_configuration_port: 9000
+minio_configuration_endpoint: ''
+minio_configuration_root_user: minioadmin
+minio_configuration_root_password: minioadmin_password_change_me
+minio_configuration_metrics_user: minio_prometheus
+minio_configuration_alias: local
+minio_configuration_mc_binary_path: /usr/local/bin/mc
+minio_configuration_mc_binary_url: https://dl.min.io/client/mc/release/linux-amd64/mc
+minio_configuration_mc_binary_checksum: ''
+minio_configuration_validate_certs: false
+minio_configuration_backets_delete: false
+minio_configuration_users_delete: false
+minio_configuration_backets:
+  - name: b-default
+    versioning: false
+minio_configuration_users:
+- name: u_default_ro
+  secret_key: u_default_ro_password_change_me
+  groups: []
+  statements:
+  - Effect: Allow
+    Action:
+    - s3:ListBucket
+    Resource:
+    - arn:aws:s3:::b-default
+    Sid: ListBucket
+  - Effect: Allow
+    Action:
+    - s3:GetObject
+    Resource:
+    - arn:aws:s3:::b-default/*
+    Sid: ReadObjects
+- name: u_default_rw
+  secret_key: u_default_rw_password_change_me
+  groups: []
+  statements:
+  - Effect: Allow
+    Action:
+    - s3:ListBucket
+    Resource:
+    - arn:aws:s3:::b-default
+    Sid: ListBucket
+  - Effect: Allow
+    Action:
+    - s3:GetObject
+    - s3:PutObject
+    - s3:DeleteObject
+    - s3:AbortMultipartUpload
+    Resource:
+    - arn:aws:s3:::b-default/*
+    Sid: ManageObjects
+minio_configuration_protected_users:
+  - "{{ minio_configuration_root_user }}"
+  - "{{ minio_configuration_metrics_user }}"
+
+# apply configures MinIO; export only reads the remote configuration.
+minio_configuration_mode: apply
+minio_configuration_export_path: "{{ playbook_dir }}/minio-inventory.yml"
+minio_configuration_no_log: true
+minio_configuration_groups: []
+minio_configuration_hashi_vault_path_password: ''
+# minio_configuration_root_password: "{{ lookup('hashi_vault', minio_configuration_hashi_vault_path_password + ':root') }}"
+minio_configuration_policy_dir: /etc/minio/policies

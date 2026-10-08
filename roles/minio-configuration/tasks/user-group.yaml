@@ -1,0 +1,24 @@
+---
+- name: user-group.yaml - read current user groups
+  ansible.builtin.command:
+    argv: ["{{ minio_configuration_mc_binary_path }}", --json, admin, user, info, "{{ minio_configuration_alias }}", "{{ minio_configuration_group_user.name }}"]
+  register: minio_configuration_user_group_info
+  changed_when: false
+  delegate_to: "{{ minio_configuration_delegate_host }}"
+
+- name: user-group.yaml - calculate current and desired memberships
+  ansible.builtin.set_fact:
+    minio_configuration_current_user_groups: "{{ (minio_configuration_user_group_info.stdout | from_json).memberOf | default([]) | map(attribute='name') | list }}"
+    minio_configuration_desired_user_groups: "{{ minio_configuration_group_user.groups | default([]) | unique | list }}"
+
+- name: user-group.yaml - remove user from undeclared groups
+  ansible.builtin.command:
+    argv: ["{{ minio_configuration_mc_binary_path }}", admin, group, remove, "{{ minio_configuration_alias }}", "{{ item }}", "{{ minio_configuration_group_user.name }}"]
+  loop: "{{ minio_configuration_current_user_groups | difference(minio_configuration_desired_user_groups) }}"
+  delegate_to: "{{ minio_configuration_delegate_host }}"
+
+- name: user-group.yaml - add user to missing groups
+  ansible.builtin.command:
+    argv: ["{{ minio_configuration_mc_binary_path }}", admin, group, add, "{{ minio_configuration_alias }}", "{{ item }}", "{{ minio_configuration_group_user.name }}"]
+  loop: "{{ minio_configuration_desired_user_groups | difference(minio_configuration_current_user_groups) }}"
+  delegate_to: "{{ minio_configuration_delegate_host }}"

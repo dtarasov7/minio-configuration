@@ -1,0 +1,83 @@
+---
+- name: backet.yaml - ensure declared buckets exist
+  ansible.builtin.command:
+    cmd: "{{ minio_configuration_mc_binary_path }} mb --ignore-existing {{ minio_configuration_alias }}/{{ item.name }}"
+  loop: "{{ minio_configuration_effective_backets }}"
+  loop_control:
+    label: "{{ item.name }}"
+  run_once: true
+  delegate_to: "{{ minio_configuration_delegate_host }}"
+
+- name: backet.yaml - configure bucket versioning mode
+  ansible.builtin.command:
+    cmd: >-
+      {{ minio_configuration_mc_binary_path }} version
+      {{ 'enable' if (item.versioning | default(false) | bool) else 'suspend' }}
+      {{ minio_configuration_alias }}/{{ item.name }}
+  loop: "{{ minio_configuration_effective_backets }}"
+  loop_control:
+    label: "{{ item.name }}"
+  changed_when: false
+  run_once: true
+  delegate_to: "{{ minio_configuration_delegate_host }}"
+
+- name: backet.yaml - collect existing buckets
+  ansible.builtin.command:
+    cmd: "{{ minio_configuration_mc_binary_path }} ls {{ minio_configuration_alias }} --json"
+  register: minio_configuration_existing_buckets_raw
+  changed_when: false
+  run_once: true
+  delegate_to: "{{ minio_configuration_delegate_host }}"
+
+- name: backet.yaml - build existing bucket list
+  ansible.builtin.set_fact:
+    minio_configuration_existing_buckets: >-
+      {{
+        (minio_configuration_existing_buckets_raw.stdout_lines | default([])
+        | reject('equalto', '')
+        | map('from_json')
+        | map(attribute='key')
+        | map('regex_replace', '/$', '')
+        | list)
+      }}
+    minio_configuration_desired_bucket_names: "{{ minio_configuration_effective_backets | map(attribute='name') | list }}"
+  run_once: true
+
+- name: backet.yaml - delete unmanaged buckets when enabled
+  ansible.builtin.command:
+    cmd: "{{ minio_configuration_mc_binary_path }} rb --force {{ minio_configuration_alias }}/{{ item }}"
+  loop: "{{ minio_configuration_existing_buckets | difference(minio_configuration_desired_bucket_names) }}"
+  loop_control:
+    label: "{{ item }}"
+  when: minio_configuration_effective_backets_delete | bool
+  run_once: true
+  delegate_to: "{{ minio_configuration_delegate_host }}"
+
+
+- name: backet.yaml - configure anonymous preset
+  ansible.builtin.command:
+    argv: ["{{ minio_configuration_mc_binary_path }}", anonymous, set, "{{ item.anonymous }}", "{{ minio_configuration_alias }}/{{ item.name }}"]
+  loop: "{{ minio_configuration_effective_backets }}"
+  when: item.anonymous is defined
+  run_once: true
+  delegate_to: "{{ minio_configuration_delegate_host }}"
+
+- name: backet.yaml - render anonymous policy
+  ansible.builtin.copy:
+    content: "{{ item.anonymous_policy | to_nice_json }}\n"
+    dest: "{{ minio_configuration_policy_dir }}/anonymous-{{ item.name }}.json"
+    owner: root
+    group: root
+    mode: '0600'
+  loop: "{{ minio_configuration_effective_backets }}"
+  when: item.anonymous_policy is defined
+  run_once: true
+  delegate_to: "{{ minio_configuration_delegate_host }}"
+
+- name: backet.yaml - apply anonymous policy
+  ansible.builtin.command:
+    argv: ["{{ minio_configuration_mc_binary_path }}", anonymous, set-json, "{{ minio_configuration_policy_dir }}/anonymous-{{ item.name }}.json", "{{ minio_configuration_alias }}/{{ item.name }}"]
+  loop: "{{ minio_configuration_effective_backets }}"
+  when: item.anonymous_policy is defined
+  run_once: true
+  delegate_to: "{{ minio_configuration_delegate_host }}"

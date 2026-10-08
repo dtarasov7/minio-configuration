@@ -1,0 +1,20 @@
+---
+- name: policy-guard.yaml - collect current direct policy owners
+  minio_configuration_snapshot:
+    binary: "{{ minio_configuration_mc_binary_path }}"
+    alias: "{{ minio_configuration_alias }}"
+    operation: assignments
+  register: minio_configuration_policy_assignments
+  when: minio_configuration_rule_policies | default([]) | length > 0
+  run_once: true
+  delegate_to: "{{ minio_configuration_delegate_host }}"
+
+- name: policy-guard.yaml - prevent updating a rule policy assigned to another owner
+  ansible.builtin.assert:
+    that:
+      - "minio_configuration_policy_assignments.assignments.get(item.name, []) | difference([{'kind': item.kind, 'name': item.owner}]) | length == 0"
+    fail_msg: "Policy {{ item.name }} is assigned to another owner; remove the conflicting assignment before updating it."
+  loop: "{{ minio_configuration_rule_policies | default([]) }}"
+  loop_control:
+    label: "{{ item.name }}"
+  run_once: true

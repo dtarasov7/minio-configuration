@@ -1,0 +1,100 @@
+---
+- name: Test group creation and exact user membership using custom alias
+  hosts: minio_cluster
+  gather_facts: false
+  vars:
+    minio_configuration_mc_binary_path: "{{ playbook_dir }}/group_mc.py"
+    minio_configuration_alias: production
+    group_state_path: "{{ playbook_dir }}/../../../.ansible/group-state.json"
+    ansible_os_family: RedHat
+    minio_configuration_users:
+      - name: reader
+        groups: [keep, readers]
+    minio_configuration_groups:
+      - name: readers
+        statements:
+          - Sid: ReadReports
+            Effect: Allow
+            Action: ['s3:GetObject']
+            Resource: ['arn:aws:s3:::project-*/reports/*']
+    minio_configuration_existing_groups: [keep, old, unused]
+    minio_configuration_group:
+      name: readers
+      statements:
+        - Sid: ReadReports
+          Effect: Allow
+          Action: ['s3:GetObject']
+          Resource: ['arn:aws:s3:::project-*/reports/*']
+    minio_configuration_group_user:
+      name: reader
+      groups: [keep, readers]
+  tasks:
+    - name: Ensure test artifact directory exists
+      ansible.builtin.file:
+        path: "{{ playbook_dir }}/../../../.ansible"
+        state: directory
+        mode: '0700'
+
+    - name: Initialize memberships
+      ansible.builtin.copy:
+        content: >-
+          {{ {'groups': {'keep': {'members': ['reader'], 'policies': [], 'status': 'enabled'},
+                         'old': {'members': ['reader', 'unmanaged'], 'policies': [], 'status': 'enabled'},
+                         'unused': {'members': ['reader'], 'policies': [], 'status': 'enabled'}},
+              'commands': []} | to_json }}
+        dest: "{{ group_state_path }}"
+        mode: '0600'
+
+    - name: Validate group-only users and declarations
+      ansible.builtin.include_role:
+        name: minio-configuration
+        tasks_from: pre-req.yaml
+
+    - name: Create declared group from user.groups and assign group policy
+      ansible.builtin.include_role:
+        name: minio-configuration
+        tasks_from: group.yaml
+
+    - name: Reconcile memberships including groups absent from inventory
+      ansible.builtin.include_role:
+        name: minio-configuration
+        tasks_from: user-group.yaml
+
+    - name: Read membership state
+      ansible.builtin.set_fact:
+        state_after_update: "{{ lookup('file', group_state_path) | from_json }}"
+
+    - name: Assert group creation, policy assignment and removal of unwanted memberships
+      ansible.builtin.assert:
+        that:
+          - state_after_update.groups.readers.members == ['reader']
+          - state_after_update.groups.readers.policies == ['minio-configuration-grp-readers-ReadReports']
+          - state_after_update.groups.keep.members == ['reader']
+          - state_after_update.groups.old.members == ['unmanaged']
+          - state_after_update.groups.unused.members == []
+          - state_after_update.commands | length == 5
+
+    - name: Reconcile the same memberships again
+      ansible.builtin.include_role:
+        name: minio-configuration
+        tasks_from: user-group.yaml
+
+    - name: Assert no repeated membership mutations
+      ansible.builtin.assert:
+        that:
+          - (lookup('file', group_state_path) | from_json).commands | length == 5
+
+    - name: Remove all memberships when user.groups is omitted
+      ansible.builtin.include_role:
+        name: minio-configuration
+        tasks_from: user-group.yaml
+      vars:
+        minio_configuration_group_user:
+          name: reader
+
+    - name: Assert omitted groups means no group memberships
+      ansible.builtin.assert:
+        that:
+          - (lookup('file', group_state_path) | from_json).groups.keep.members == []
+          - (lookup('file', group_state_path) | from_json).groups.readers.members == []
+          - (lookup('file', group_state_path) | from_json).groups.old.members == ['unmanaged']

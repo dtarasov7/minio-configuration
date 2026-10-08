@@ -1,0 +1,77 @@
+---
+- name: group.yaml - calculate members from user definitions
+  ansible.builtin.set_fact:
+    minio_configuration_declared_group_users: []
+
+- name: group.yaml - collect users assigned to this group
+  ansible.builtin.set_fact:
+    minio_configuration_declared_group_users: "{{ minio_configuration_declared_group_users + [item.name] }}"
+  loop: "{{ minio_configuration_effective_users }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: minio_configuration_group.name in (item.groups | default([]))
+  no_log: "{{ minio_configuration_no_log }}"
+
+- name: group.yaml - combine managed and explicitly declared members
+  ansible.builtin.set_fact:
+    minio_configuration_desired_group_members: "{{ (minio_configuration_group.members | default([])) | union(minio_configuration_declared_group_users) }}"
+
+- name: group.yaml - read group configuration
+  ansible.builtin.command:
+    argv: ["{{ minio_configuration_mc_binary_path }}", --json, admin, group, info, "{{ minio_configuration_alias }}", "{{ minio_configuration_group.name }}"]
+  register: minio_configuration_group_info
+  when: minio_configuration_group.name in minio_configuration_existing_groups
+  changed_when: false
+  delegate_to: "{{ minio_configuration_delegate_host }}"
+
+- name: group.yaml - parse group configuration
+  ansible.builtin.set_fact:
+    minio_configuration_current_group: >-
+      {{ (minio_configuration_group_info.stdout | from_json)
+         if minio_configuration_group.name in minio_configuration_existing_groups
+         else {'members': [], 'groupPolicy': '', 'groupStatus': ''} }}
+
+- name: group.yaml - require at least one member to create a new group with mc
+  ansible.builtin.assert:
+    that:
+      - minio_configuration_group.name in minio_configuration_existing_groups or minio_configuration_desired_group_members | length > 0
+    fail_msg: 'mc cannot create an empty group. Assign at least one user through user.groups.'
+
+- name: group.yaml - create group and add declared members
+  ansible.builtin.command:
+    argv: "{{ [minio_configuration_mc_binary_path, 'admin', 'group', 'add', minio_configuration_alias, minio_configuration_group.name] + (minio_configuration_desired_group_members | difference(minio_configuration_current_group.members | default([]))) }}"
+  when: minio_configuration_desired_group_members | difference(minio_configuration_current_group.members | default([])) | length > 0
+  delegate_to: "{{ minio_configuration_delegate_host }}"
+
+- name: group.yaml - remove undeclared members when a complete members list is specified
+  ansible.builtin.command:
+    argv: "{{ [minio_configuration_mc_binary_path, 'admin', 'group', 'remove', minio_configuration_alias, minio_configuration_group.name] + minio_configuration_removed_members }}"
+  vars:
+    minio_configuration_removed_members: "{{ minio_configuration_current_group.members | default([]) | difference(minio_configuration_desired_group_members) }}"
+  when:
+    - minio_configuration_group.members is defined
+    - minio_configuration_removed_members | length > 0
+  delegate_to: "{{ minio_configuration_delegate_host }}"
+
+- name: group.yaml - calculate current and desired group policies
+  ansible.builtin.set_fact:
+    minio_configuration_current_group_policies: "{{ (minio_configuration_current_group.groupPolicy | default('')).split(',') | reject('equalto', '') | list }}"
+    minio_configuration_desired_group_policies: "{{ minio_configuration_group | minio_configuration_policy_names('grp') }}"
+
+- name: group.yaml - detach undeclared group policies
+  ansible.builtin.command:
+    argv: ["{{ minio_configuration_mc_binary_path }}", admin, policy, detach, "{{ minio_configuration_alias }}", "{{ item }}", --group, "{{ minio_configuration_group.name }}"]
+  loop: "{{ minio_configuration_current_group_policies | difference(minio_configuration_desired_group_policies) }}"
+  delegate_to: "{{ minio_configuration_delegate_host }}"
+
+- name: group.yaml - attach missing group policies
+  ansible.builtin.command:
+    argv: ["{{ minio_configuration_mc_binary_path }}", admin, policy, attach, "{{ minio_configuration_alias }}", "{{ item }}", --group, "{{ minio_configuration_group.name }}"]
+  loop: "{{ minio_configuration_desired_group_policies | difference(minio_configuration_current_group_policies) }}"
+  delegate_to: "{{ minio_configuration_delegate_host }}"
+
+- name: group.yaml - restore group status
+  ansible.builtin.command:
+    argv: ["{{ minio_configuration_mc_binary_path }}", admin, group, "{{ 'enable' if minio_configuration_group.status | default('enabled') == 'enabled' else 'disable' }}", "{{ minio_configuration_alias }}", "{{ minio_configuration_group.name }}"]
+  delegate_to: "{{ minio_configuration_delegate_host }}"
+  when: minio_configuration_current_group.groupStatus | default('') != minio_configuration_group.status | default('enabled')

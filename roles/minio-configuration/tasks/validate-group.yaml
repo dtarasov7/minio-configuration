@@ -1,0 +1,11 @@
+---
+- name: validate-group.yaml - ensure managed users agree with explicit group members
+  ansible.builtin.assert:
+    that:
+      - minio_configuration_validation_group.name in (item.groups | default([]))
+    fail_msg: 'Group members conflicts with user.groups; user.groups is the authoritative membership list.'
+  loop: "{{ minio_configuration_effective_users }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: item.name in (minio_configuration_validation_group.members | default([]))
+  no_log: "{{ minio_configuration_no_log }}"

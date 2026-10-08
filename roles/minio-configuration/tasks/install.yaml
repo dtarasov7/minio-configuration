@@ -1,0 +1,28 @@
+---
+- name: install.yaml - install required packages
+  ansible.builtin.package:
+    name:
+      - curl
+      - ca-certificates
+    state: present
+
+- name: install.yaml - download mc binary
+  ansible.builtin.get_url:
+    url: "{{ minio_configuration_mc_binary_url }}"
+    dest: "{{ minio_configuration_mc_binary_path }}"
+    mode: '0755'
+    checksum: "{{ minio_configuration_mc_binary_checksum if (minio_configuration_mc_binary_checksum | length > 0) else omit }}"
+    validate_certs: "{{ minio_configuration_validate_certs }}"
+  run_once: true
+  delegate_to: "{{ minio_configuration_delegate_host }}"
+
+- name: install.yaml - create policy directory
+  ansible.builtin.file:
+    path: "{{ minio_configuration_policy_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  run_once: true
+  delegate_to: "{{ minio_configuration_delegate_host }}"
+

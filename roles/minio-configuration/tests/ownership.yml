@@ -1,0 +1,60 @@
+---
+- name: Test exclusive policy ownership with external entities
+  hosts: minio_cluster
+  gather_facts: false
+  vars:
+    minio_configuration_mc_binary_path: "{{ playbook_dir }}/guard_mc.py"
+    minio_configuration_alias: production
+    state_path: "{{ playbook_dir }}/../../../.ansible/guard-state.json"
+    minio_configuration_rule_policies:
+      - name: minio-configuration-user-alice-Read
+        kind: user
+        owner: alice
+      - name: minio-configuration-grp-alice-Read
+        kind: grp
+        owner: alice
+  tasks:
+    - name: Ensure test artifact directory exists
+      ansible.builtin.file:
+        path: "{{ playbook_dir }}/../../../.ansible"
+        state: directory
+        mode: '0700'
+
+    - name: Initialize policies exclusively assigned to their owners
+      ansible.builtin.copy:
+        content: >-
+          {{ {'minio-configuration-user-alice-Read': [{'kind': 'user', 'name': 'alice'}],
+              'minio-configuration-grp-alice-Read': [{'kind': 'grp', 'name': 'alice'}]} | to_json }}
+        dest: "{{ state_path }}"
+        mode: '0600'
+
+    - name: Verify user and group with the same name own different policies
+      ansible.builtin.include_role:
+        name: minio-configuration
+        tasks_from: policy-guard.yaml
+
+    - name: Simulate a foreign assignment created outside the role
+      ansible.builtin.copy:
+        content: >-
+          {{ {'minio-configuration-user-alice-Read': [{'kind': 'user', 'name': 'alice'},
+                                                     {'kind': 'user', 'name': 'external'},
+                                                     {'kind': 'grp', 'name': 'external'}],
+              'minio-configuration-grp-alice-Read': [{'kind': 'grp', 'name': 'alice'}]} | to_json }}
+        dest: "{{ state_path }}"
+        mode: '0600'
+
+    - name: Reject foreign ownership
+      block:
+        - name: Check conflicting assignments
+          ansible.builtin.include_role:
+            name: minio-configuration
+            tasks_from: policy-guard.yaml
+      rescue:
+        - name: Record expected ownership rejection
+          ansible.builtin.set_fact:
+            ownership_rejected: "{{ 'prevent updating a rule policy assigned to another owner' in ansible_failed_task.name }}"
+
+    - name: Require explicit rejection of conflicting ownership
+      ansible.builtin.assert:
+        that:
+          - ownership_rejected | default(false) | bool

@@ -1,0 +1,91 @@
+---
+- name: user.yaml - collect existing users
+  ansible.builtin.command:
+    cmd: "{{ minio_configuration_mc_binary_path }} admin user list {{ minio_configuration_alias }} --json"
+  register: minio_configuration_existing_users_raw
+  changed_when: false
+  run_once: true
+  delegate_to: "{{ minio_configuration_delegate_host }}"
+
+- name: user.yaml - build existing user list
+  ansible.builtin.set_fact:
+    minio_configuration_existing_users: >-
+      {{
+        (minio_configuration_existing_users_raw.stdout_lines | default([])
+        | reject('equalto', '')
+        | map('from_json')
+        | map(attribute='accessKey')
+        | list)
+      }}
+    minio_configuration_desired_users: "{{ minio_configuration_effective_users | map(attribute='name') | list }}"
+    minio_configuration_protected_users_effective: "{{ minio_configuration_protected_users | list | unique }}"
+  run_once: true
+
+- name: user.yaml - require a password for new users
+  ansible.builtin.assert:
+    that:
+      - item.secret_key is defined or item.name in minio_configuration_existing_users
+    fail_msg: 'New user requires secret_key; exported inventories do not contain passwords.'
+  loop: "{{ minio_configuration_effective_users }}"
+  no_log: "{{ minio_configuration_no_log }}"
+  run_once: true
+
+- name: user.yaml - create or update users without deleting them
+  ansible.builtin.command:
+    argv: ["{{ minio_configuration_mc_binary_path }}", admin, user, add, "{{ minio_configuration_alias }}", "{{ item.name }}", "{{ item.secret_key }}"]
+  loop: "{{ minio_configuration_effective_users }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: item.secret_key is defined
+  no_log: "{{ minio_configuration_no_log }}"
+  run_once: true
+  delegate_to: "{{ minio_configuration_delegate_host }}"
+
+- name: user.yaml - create exclusive rule policies and configure groups
+  ansible.builtin.import_tasks: policy.yaml
+
+- name: user.yaml - reconcile direct user policy attachments
+  ansible.builtin.include_tasks: user-policy.yaml
+  loop: "{{ minio_configuration_effective_users }}"
+  loop_control:
+    loop_var: minio_configuration_policy_user
+    label: "{{ minio_configuration_policy_user.name }}"
+  no_log: "{{ minio_configuration_no_log }}"
+  run_once: true
+
+- name: user.yaml - reconcile user group membership
+  ansible.builtin.include_tasks: user-group.yaml
+  loop: "{{ minio_configuration_effective_users }}"
+  loop_control:
+    loop_var: minio_configuration_group_user
+    label: "{{ minio_configuration_group_user.name }}"
+  no_log: "{{ minio_configuration_no_log }}"
+  run_once: true
+
+- name: user.yaml - configure user status
+  ansible.builtin.command:
+    argv: ["{{ minio_configuration_mc_binary_path }}", admin, user, "{{ 'enable' if item.status == 'enabled' else 'disable' }}", "{{ minio_configuration_alias }}", "{{ item.name }}"]
+  loop: "{{ minio_configuration_effective_users }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: item.status is defined
+  no_log: "{{ minio_configuration_no_log }}"
+  run_once: true
+  delegate_to: "{{ minio_configuration_delegate_host }}"
+
+- name: user.yaml - delete unmanaged users when enabled
+  ansible.builtin.command:
+    argv: ["{{ minio_configuration_mc_binary_path }}", admin, user, remove, "{{ minio_configuration_alias }}", "{{ item }}"]
+  loop: >-
+    {{
+      minio_configuration_existing_users
+      | difference(minio_configuration_desired_users)
+      | difference(minio_configuration_protected_users_effective)
+    }}
+  loop_control:
+    label: "{{ item }}"
+  when: minio_configuration_effective_users_delete | bool
+  run_once: true
+  delegate_to: "{{ minio_configuration_delegate_host }}"
+
+

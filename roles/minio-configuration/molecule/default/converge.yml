@@ -1,0 +1,218 @@
+---
+- name: Converge MinIO cluster for tests
+  hosts: minio_cluster
+  become: false
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+    minio_cluster_root_user: minioadmin
+    minio_cluster_root_password: minioadmin123
+    minio_cluster_metrics_user: minio_prometheus
+    minio_cluster_metrics_password: minio_prometheus123
+    minio_cluster_data_dirs:
+    - /srv/minio/data1
+    - /srv/minio/data2
+  roles:
+  - role: minio-cluster
+- name: Converge initial MinIO configuration
+  hosts: minio_cluster
+  become: false
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+    minio_configuration_alias: production
+    minio_configuration_root_user: minioadmin
+    minio_configuration_root_password: minioadmin123
+    minio_configuration_metrics_user: minio_prometheus
+    minio_configuration_backets:
+    - name: b-test-a
+      versioning: false
+    - name: b-test-b
+      versioning: false
+    minio_configuration_users:
+    - name: u_test_ro
+      secret_key: u_test_ro_secret_123
+      statements:
+      - Effect: Allow
+        Action:
+        - s3:ListBucket
+        Resource:
+        - arn:aws:s3:::b-test-a
+        Sid: Rule1
+      - Effect: Allow
+        Action:
+        - s3:GetObject
+        Resource:
+        - arn:aws:s3:::b-test-a/*
+        Sid: Rule2
+    - name: u_test_rw
+      secret_key: u_test_rw_secret_123
+      statements:
+      - Effect: Allow
+        Action:
+        - s3:ListBucket
+        Resource:
+        - arn:aws:s3:::b-test-a
+        - arn:aws:s3:::b-test-b
+        Sid: Rule1
+      - Effect: Allow
+        Action:
+        - s3:GetObject
+        - s3:PutObject
+        - s3:DeleteObject
+        - s3:AbortMultipartUpload
+        Resource:
+        - arn:aws:s3:::b-test-a/*
+        - arn:aws:s3:::b-test-b/*
+        Sid: Rule2
+  roles:
+  - role: minio-configuration
+- name: Converge updated MinIO configuration with deletion
+  hosts: minio_cluster
+  become: false
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+    minio_configuration_alias: production
+    minio_configuration_root_user: minioadmin
+    minio_configuration_root_password: minioadmin123
+    minio_configuration_metrics_user: minio_prometheus
+    minio_configuration_backets_delete: true
+    minio_configuration_users_delete: true
+    minio_configuration_backets:
+    - name: b-test-b
+      versioning: true
+    - name: b-test-c
+      versioning: false
+    minio_configuration_users:
+    - name: u_test_rw
+      secret_key: u_test_rw_secret_new_456
+      statements:
+      - Effect: Allow
+        Action:
+        - s3:ListBucket
+        Resource:
+        - arn:aws:s3:::b-test-b
+        - arn:aws:s3:::b-test-c
+        Sid: Rule1
+      - Effect: Allow
+        Action:
+        - s3:GetObject
+        - s3:PutObject
+        - s3:DeleteObject
+        - s3:AbortMultipartUpload
+        Resource:
+        - arn:aws:s3:::b-test-b/*
+        - arn:aws:s3:::b-test-c/*
+        Sid: Rule2
+    - name: u_test_ro2
+      secret_key: u_test_ro2_secret_456
+      statements:
+      - Effect: Allow
+        Action:
+        - s3:ListBucket
+        Resource:
+        - arn:aws:s3:::b-test-b
+        Sid: Rule1
+      - Effect: Allow
+        Action:
+        - s3:GetObject
+        Resource:
+        - arn:aws:s3:::b-test-b/*
+        Sid: Rule2
+  roles:
+  - role: minio-configuration
+- name: Configure granular access policies
+  hosts: minio_cluster
+  become: false
+  vars:
+    minio_configuration_alias: production
+    minio_configuration_root_user: minioadmin
+    minio_configuration_root_password: minioadmin123
+    minio_configuration_backets:
+    - name: b-test-b
+      versioning: true
+      anonymous_policy:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            AWS:
+            - '*'
+          Action:
+          - s3:GetObject
+          Resource:
+          - arn:aws:s3:::b-test-b/public/*
+    - name: b-test-c
+      anonymous: none
+    - name: b-download
+      anonymous: download
+    - name: b-upload
+      anonymous: upload
+    minio_configuration_groups:
+    - name: readers
+      statements:
+      - Effect: Allow
+        Action:
+        - s3:GetObject
+        Resource:
+        - arn:aws:s3:::b-test-*/public/*
+        Sid: Rule1
+    minio_configuration_users:
+    - name: u_group_reader
+      secret_key: group_reader_secret_123
+      groups:
+      - readers
+    - name: u_scoped
+      secret_key: scoped_secret_123
+      statements:
+      - Effect: Allow
+        Action:
+        - s3:GetObject
+        - s3:PutObject
+        Resource:
+        - arn:aws:s3:::b-test-*/public/*
+        - arn:aws:s3:::b-test-c/single.txt
+        Sid: Rule1
+      - Effect: Allow
+        Action:
+        - s3:CreateBucket
+        Resource:
+        - arn:aws:s3:::*
+        Sid: Rule2
+      - Effect: Deny
+        Action:
+        - s3:CreateBucket
+        Resource:
+        - arn:aws:s3:::*
+        Sid: Rule3
+  roles:
+  - role: minio-configuration
+- name: Export current configuration
+  hosts: minio_cluster
+  become: false
+  vars:
+    minio_configuration_alias: production
+    minio_configuration_root_user: minioadmin
+    minio_configuration_root_password: minioadmin123
+    minio_configuration_mode: export
+    minio_configuration_backets_delete: true
+    minio_configuration_users_delete: true
+    minio_configuration_export_path: '{{ lookup(''env'', ''MOLECULE_EPHEMERAL_DIRECTORY'') }}/minio-inventory.yml'
+  roles:
+  - role: minio-configuration
+- name: Apply exported configuration without user passwords
+  hosts: minio_cluster
+  become: false
+  vars:
+    vault_minio_root_password: minioadmin123
+  tasks:
+  - name: converge.yml - load exported inventory variables
+    ansible.builtin.include_vars:
+      file: '{{ lookup(''env'', ''MOLECULE_EPHEMERAL_DIRECTORY'') }}/minio-inventory.yml'
+      name: minio_configuration_exported_inventory
+  - name: converge.yml - use exported desired state
+    ansible.builtin.set_fact:
+      '{{ item.key }}': '{{ item.value }}'
+    loop: '{{ minio_configuration_exported_inventory.all.children.minio_cluster.vars | dict2items }}'
+    no_log: true
+  - name: converge.yml - apply exported desired state
+    ansible.builtin.include_role:
+      name: minio-configuration

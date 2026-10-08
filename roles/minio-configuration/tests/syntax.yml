@@ -1,0 +1,5 @@
+---
+- name: Validate role syntax
+  hosts: minio_cluster
+  roles:
+    - minio-configuration

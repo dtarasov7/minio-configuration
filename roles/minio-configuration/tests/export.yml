@@ -1,0 +1,44 @@
+---
+- name: Test inventory export using a read-only mc fixture
+  hosts: minio_cluster
+  gather_facts: false
+  vars:
+    minio_configuration_mc_binary_path: "{{ playbook_dir }}/fake_mc.py"
+    ansible_os_family: RedHat
+    minio_configuration_mode: export
+    minio_configuration_alias: production
+    minio_configuration_backets_delete: true
+    minio_configuration_users_delete: true
+    minio_configuration_endpoint: http://minio.example.test:9000
+    minio_configuration_export_path: "{{ playbook_dir }}/../../../.ansible/exported-inventory.yml"
+  tasks:
+    - name: Ensure local test artifact directory exists
+      ansible.builtin.file:
+        path: "{{ playbook_dir }}/../../../.ansible"
+        state: directory
+        mode: '0700'
+    - name: Execute actual export tasks
+      ansible.builtin.include_role:
+        name: minio-configuration
+
+    - name: Load exported inventory
+      ansible.builtin.set_fact:
+        exported: "{{ lookup('file', minio_configuration_export_path) | from_yaml }}"
+      vars:
+        vault_minio_root_password: test-password
+
+    - name: Verify the resulting inventory and file permissions
+      ansible.builtin.stat:
+        path: "{{ minio_configuration_export_path }}"
+      register: exported_file
+
+    - name: Assert exported inventory contents
+      ansible.builtin.assert:
+        that:
+          - exported_file.stat.mode == '0600'
+          - exported.all.children.minio_cluster.vars.minio_configuration_alias == 'production'
+          - exported.all.children.minio_cluster.vars.minio_configuration_users[1].groups == ['staff']
+          - exported.all.children.minio_cluster.vars.minio_configuration_users | length == 2
+          - exported.all.children.minio_cluster.vars.minio_configuration_backets | length == 2
+          - exported.all.children.minio_cluster.vars.minio_configuration_groups[0].status == 'disabled'
+          - exported.all.children.minio_cluster.vars.minio_configuration_mode == 'apply'

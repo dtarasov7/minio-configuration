@@ -1,0 +1,32 @@
+---
+- name: config.yaml - resolve MinIO endpoint
+  ansible.builtin.set_fact:
+    minio_configuration_effective_endpoint: >-
+      {{ minio_configuration_endpoint if (minio_configuration_endpoint | length > 0)
+         else (minio_configuration_scheme ~ '://' ~ (hostvars[minio_configuration_delegate_host].ansible_host | default(minio_configuration_delegate_host)) ~ ':' ~ (minio_configuration_port | string)) }}
+  run_once: true
+
+- name: config.yaml - configure mc alias for MinIO
+  ansible.builtin.command:
+    argv:
+      - "{{ minio_configuration_mc_binary_path }}"
+      - alias
+      - set
+      - "{{ minio_configuration_alias }}"
+      - "{{ minio_configuration_effective_endpoint }}"
+      - "{{ minio_configuration_root_user }}"
+      - "{{ minio_configuration_root_password }}"
+  no_log: "{{ minio_configuration_no_log }}"
+  register: minio_configuration_alias_cmd
+  changed_when: false
+  run_once: true
+  delegate_to: "{{ minio_configuration_delegate_host }}"
+
+- name: config.yaml - verify MinIO admin API access
+  ansible.builtin.command:
+    cmd: "{{ minio_configuration_mc_binary_path }} admin info {{ minio_configuration_alias }}"
+  register: minio_configuration_admin_info
+  changed_when: false
+  run_once: true
+  delegate_to: "{{ minio_configuration_delegate_host }}"
+

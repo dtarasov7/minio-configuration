@@ -1,0 +1,45 @@
+---
+- name: policy.yaml - render one policy document per owner rule
+  ansible.builtin.template:
+    src: policy.json.j2
+    dest: "{{ minio_configuration_policy_dir }}/{{ item.name | hash('sha256') }}.json"
+    owner: root
+    group: root
+    mode: '0600'
+  loop: "{{ minio_configuration_rule_policies | default([]) }}"
+  loop_control:
+    label: "{{ item.name }}"
+  run_once: true
+  delegate_to: "{{ minio_configuration_delegate_host }}"
+
+- name: policy.yaml - create or update exclusive rule policies
+  ansible.builtin.command:
+    argv: ["{{ minio_configuration_mc_binary_path }}", admin, policy, create, "{{ minio_configuration_alias }}", "{{ item.name }}", "{{ minio_configuration_policy_dir }}/{{ item.name | hash('sha256') }}.json"]
+  loop: "{{ minio_configuration_rule_policies | default([]) }}"
+  loop_control:
+    label: "{{ item.name }}"
+  run_once: true
+  delegate_to: "{{ minio_configuration_delegate_host }}"
+
+- name: policy.yaml - collect existing groups
+  ansible.builtin.command:
+    argv: ["{{ minio_configuration_mc_binary_path }}", --json, admin, group, list, "{{ minio_configuration_alias }}"]
+  register: minio_configuration_existing_groups_raw
+  changed_when: false
+  when: minio_configuration_groups | length > 0
+  run_once: true
+  delegate_to: "{{ minio_configuration_delegate_host }}"
+
+- name: policy.yaml - parse existing group names
+  ansible.builtin.set_fact:
+    minio_configuration_existing_groups: "{{ (minio_configuration_existing_groups_raw.stdout | from_json).groups | default([]) }}"
+  when: minio_configuration_groups | length > 0
+  run_once: true
+
+- name: policy.yaml - reconcile groups
+  ansible.builtin.include_tasks: group.yaml
+  loop: "{{ minio_configuration_groups }}"
+  loop_control:
+    loop_var: minio_configuration_group
+    label: "{{ minio_configuration_group.name }}"
+  run_once: true

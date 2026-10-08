@@ -1,0 +1,6 @@
+---
+- name: Configure or export MinIO
+  hosts: minio_cluster
+  become: true
+  roles:
+    - minio-configuration

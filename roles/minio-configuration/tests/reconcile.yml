@@ -1,0 +1,56 @@
+---
+- name: Test exact direct-policy reconciliation
+  hosts: minio_cluster
+  gather_facts: false
+  vars:
+    minio_configuration_mc_binary_path: "{{ playbook_dir }}/reconcile_mc.py"
+    minio_configuration_alias: production
+    minio_configuration_policy_user:
+      name: reader
+      statements:
+        - Sid: NoCreateBucket
+          Effect: Deny
+          Action: ['s3:CreateBucket']
+          Resource: ['arn:aws:s3:::*']
+  tasks:
+    - name: Ensure local test artifact directory exists
+      ansible.builtin.file:
+        path: "{{ playbook_dir }}/../../../.ansible"
+        state: directory
+        mode: '0700'
+    - name: Clear fixture command log
+      ansible.builtin.copy:
+        content: ''
+        dest: "{{ playbook_dir }}/../../../.ansible/reconcile-commands.jsonl"
+        mode: '0600'
+
+    - name: Execute actual policy reconciliation tasks
+      ansible.builtin.include_role:
+        name: minio-configuration
+        tasks_from: user-policy.yaml
+
+    - name: Assign identical inline permissions to another user
+      ansible.builtin.include_role:
+        name: minio-configuration
+        tasks_from: user-policy.yaml
+      vars:
+        minio_configuration_policy_user:
+          name: reader2
+          statements:
+            - Sid: NoCreateBucket
+              Effect: Deny
+              Action: ['s3:CreateBucket']
+              Resource: ['arn:aws:s3:::*']
+
+    - name: Read fixture command log
+      ansible.builtin.set_fact:
+        commands: "{{ lookup('file', playbook_dir + '/../../../.ansible/reconcile-commands.jsonl').splitlines() | map('from_json') | list }}"
+
+    - name: Verify only obsolete policies detached and missing policies attached
+      ansible.builtin.assert:
+        that:
+          - commands | length == 6
+          - "['admin', 'policy', 'detach', 'production', 'old-policy', '--user', 'reader'] in commands"
+          - "['admin', 'policy', 'detach', 'production', 'read', '--user', 'reader'] in commands"
+          - "['admin', 'policy', 'attach', 'production', 'minio-configuration-user-reader-NoCreateBucket', '--user', 'reader'] in commands"
+          - "['admin', 'policy', 'attach', 'production', 'minio-configuration-user-reader2-NoCreateBucket', '--user', 'reader2'] in commands"
