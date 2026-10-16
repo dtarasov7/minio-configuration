@@ -8,38 +8,28 @@ Role version: **3.1.0**.
 |---|---|
 | Apply configuration | normal run without tags |
 | Export current configuration | `--tags export` |
-| Preview operations without changes | `--tags dryrun` or `--check` |
+| Preview operations without changes | `--tags dry` or `--tags dryrun` |
 | Remove declared users and buckets | `--tags clean` |
 
-Select actions with tags; no mode variable is needed. `export` takes precedence over
-`dryrun` and suppresses apply/cleanup. Detailed commands and behavior appear below.
+Select actions with tags. `export` takes precedence over
+`dry`/`dryrun` and suppresses apply/cleanup. `--check` is an independent native Ansible
+mode that can be combined with any action. Detailed commands and behavior appear below.
 
 Configure MinIO buckets, anonymous access and built-in IAM users through `mc`,
 or export their current configuration as YAML variables for an Ansible inventory.
 
-## Prerequisites and migration from earlier versions
+## Prerequisites
 
 Install `mc` (or `mcli`) and configure an authenticated administrative alias on
 `minio_configuration_delegate_host` before invoking the role. Set
 `minio_configuration_mc_binary_path` to the full executable path, including its filename.
 The role runs that executable with `admin info <alias>` and stops on a missing binary,
-unknown alias or access error. It does not install packages, download mc, change aliases,
-or require an administrator password.
+unknown alias or access error.
 
 The alias must be available to the effective Ansible execution user, including `become`.
 It defines the endpoint, credentials and TLS settings. Configure aliases separately on
 any new delegate/server before reusing an export. Add custom administrative/technical
 accounts to `minio_configuration_protected_users` when deletion is enabled.
-
-Version 2.0.0 removes role variables for endpoint/scheme/port, root credentials,
-mc download URL/checksum and download certificate validation. Remove those settings
-from inventory; configure them outside the role where appropriate. Application user
-`secret_key` values remain supported.
-
-Version 3.0.0 removes `minio_configuration_mode`. Remove it from inventory, extra vars
-and previously exported files. Select export with `--tags export` and preview with
-`--tags dryrun` or `--check`. The role stops with an explanation if the old variable
-is present; a normal run applies configuration.
 
 ## Variables
 
@@ -50,7 +40,7 @@ is present; a normal run applies configuration.
 | `minio_configuration_metrics_user` | `minio_prometheus` | Protected metrics user |
 | `minio_configuration_alias` | `local` | mc alias for every command and export |
 | `minio_configuration_mc_binary_path` | `/usr/local/bin/mc` | Full path including the executable name, e.g. `/opt/minio/mcli` |
-| `minio_configuration_backets` | Bucket `b-default`, versioning disabled | Bucket definitions; spelling is intentional for compatibility |
+| `minio_configuration_backets` | Bucket `b-default`, versioning disabled | Bucket definitions |
 | `minio_configuration_users` | Explicit read and write IAM statements on `b-default` | See defaults/main.yml; override passwords |
 | `minio_configuration_backets_delete` | `false` | Delete undeclared buckets |
 | `minio_configuration_users_delete` | `false` | Delete undeclared users |
@@ -132,8 +122,8 @@ its members inherit the permissions through membership.
 
 Direct attachments exactly match statements. Empty/omitted statements remove all
 direct policies. Changing a Sid detaches its old policy and creates a new one;
-unattached old policy documents are retained on the server. Shared named policies
-and policies fields are unsupported. Before configuration changes, the role reads
+unattached policy documents remain on the server. Permissions are defined through
+each user or group's statements. Before configuration changes, the role reads
 all built-in direct assignments and refuses to update a generated policy attached
 to any other owner, including entities created outside the role. Foreign assignments
 are not removed automatically. Do not change assignments concurrently with the run.
@@ -276,22 +266,23 @@ Only the versioning enabled state is preserved, not MFA/prefix exclusion setting
 
 Application user passwords can use inventory variables, Ansible Vault, or variable-level
 HashiCorp Vault lookups, for example `secret_key: "{{ vault_app_secret }}"`.
-`minio_configuration_hashi_vault_path_password` remains available for these lookups.
+Use `minio_configuration_hashi_vault_path_password` for these lookups.
 
 ## Cleanup
 
 Use `--tags clean` to remove declared users (except protected users), buckets and
 generated policy files. Flags for deleting undeclared objects do not control this
-explicit cleanup. Preview it with `--tags dryrun,clean` or `--check --tags clean`.
+explicit cleanup. Print its plan with `--tags dry,clean`; run native Ansible checks
+with `--check --tags clean`.
 
-## Dryrun
+## Dry preview
 
 ```bash
-ANSIBLE_ROLES_PATH=roles ansible-playbook -i inventory.yml roles/minio-configuration/examples/playbook.yml --tags dryrun
-ANSIBLE_ROLES_PATH=roles ansible-playbook -i inventory.yml roles/minio-configuration/examples/playbook.yml --check
+ANSIBLE_ROLES_PATH=roles ansible-playbook -i inventory.yml roles/minio-configuration/examples/playbook.yml --tags dry
+ANSIBLE_ROLES_PATH=roles ansible-playbook -i inventory.yml roles/minio-configuration/examples/playbook.yml --tags dry --check
 ```
 
-Dryrun validates input, checks the alias and reads the current buckets, users, groups,
+The `dry` and `dryrun` tags are equivalent. Dry preview validates input, checks the alias and reads the current buckets, users, groups,
 policies and assignments. It prints `minio_configuration_plan` with operation names,
 targets, policy documents, membership changes and deletions permitted by the flags.
 User passwords appear as `[REDACTED]`. It does not write policy files, create directories,
@@ -300,17 +291,30 @@ The plan describes operations the apply tasks would attempt, including repeated
 policy updates, password updates and versioning settings; it is not an exact change count.
 It is a snapshot: concurrent changes and server-side write authorization can affect apply.
 
-Use `--tags dryrun,user` or `--check --tags user` for user/group
-operations only; replace `user` with `backet` for buckets or `clean` for cleanup.
-`--tags dryrun` alone previews the normal full run, excluding cleanup.
-The `export` tag takes precedence over `dryrun` when both are selected.
-Standard `--check` previews apply/clean; export in check mode reads the server and previews
-writing the inventory through Ansible's copy module.
+Use `--tags dry,user` for user/group operations; replace `user` with `backet` for buckets
+or `clean` for cleanup. A single `dry` or `dryrun` tag previews the normal full run,
+excluding cleanup. Selecting `export` runs export.
+
+## Native Ansible check mode
+
+`--check` does not select a role action. Every combination is supported:
+
+```bash
+ANSIBLE_ROLES_PATH=roles ansible-playbook -i inventory.yml roles/minio-configuration/examples/playbook.yml --check
+ANSIBLE_ROLES_PATH=roles ansible-playbook -i inventory.yml roles/minio-configuration/examples/playbook.yml --tags dry --check
+ANSIBLE_ROLES_PATH=roles ansible-playbook -i inventory.yml roles/minio-configuration/examples/playbook.yml --tags export --check
+```
+
+The selected action's modules follow their native check-mode behavior. For a normal
+run with `--check`, Ansible checks the apply tasks and skips mutating mc commands.
+Read commands execute to validate access and obtain current state. Only `dry`/`dryrun`
+print `minio_configuration_plan`. With `export --check`, MinIO is read and the copy
+module previews writing the export without creating or overwriting the file.
 
 ## Tags and tests
 
 Tags: `install`, `config`, `backet`, `user`, `ssl`,
-`dryrun`; `export` and `clean` use `never` and require explicit selection. Preflight and existing alias checks use
+`dry`, `dryrun`; `export` and `clean` use `never` and require explicit selection. Preflight and existing alias checks use
 `always` and run with each operational tag. `install` only prepares the policy directory;
 `user` and `backet` also prepare it when policy files are needed. Nested validation and reconciliation tasks receive the required tags.
 Selecting `export` suppresses installation, apply and cleanup even when combined
@@ -329,6 +333,8 @@ python -m unittest discover -s roles/minio-configuration/tests -v
 ANSIBLE_ROLES_PATH=roles ansible-playbook -i roles/minio-configuration/tests/inventory.yml roles/minio-configuration/tests/export.yml --tags export
 ANSIBLE_ROLES_PATH=roles ansible-playbook -i roles/minio-configuration/tests/inventory.yml roles/minio-configuration/tests/tags.yml --tags user
 ANSIBLE_ROLES_PATH=roles ansible-playbook -i roles/minio-configuration/tests/inventory.yml roles/minio-configuration/tests/dryrun.yml --tags dryrun
+ANSIBLE_ROLES_PATH=roles ansible-playbook -i roles/minio-configuration/tests/inventory.yml roles/minio-configuration/tests/check.yml --check
+ANSIBLE_ROLES_PATH=roles ansible-playbook -i roles/minio-configuration/tests/inventory.yml roles/minio-configuration/tests/export-check.yml --tags export --check
 ANSIBLE_ROLES_PATH=roles ansible-playbook -i roles/minio-configuration/tests/inventory.yml roles/minio-configuration/tests/prerequisites.yml
 ANSIBLE_ROLES_PATH=roles ansible-playbook -i roles/minio-configuration/tests/inventory.yml roles/minio-configuration/tests/groups.yml
 ANSIBLE_ROLES_PATH=roles ansible-playbook -i roles/minio-configuration/tests/inventory.yml roles/minio-configuration/tests/ownership.yml

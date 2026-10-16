@@ -8,11 +8,12 @@
 |---|---|
 | Применить конфигурацию | обычный запуск без тегов |
 | Экспортировать текущую конфигурацию | `--tags export` |
-| Посмотреть план без изменений | `--tags dryrun` или `--check` |
+| Посмотреть план без изменений | `--tags dry` или `--tags dryrun` |
 | Удалить объявленных пользователей и бакеты | `--tags clean` |
 
-Выбор действий задаётся тегами; переменная режима не нужна. `export` имеет приоритет
-над `dryrun` и исключает применение/очистку. Подробности и команды — в разделах ниже.
+Действие выбирается тегами. `export` имеет приоритет
+над `dry`/`dryrun` и исключает применение/очистку. `--check` — независимый штатный
+режим Ansible, который можно добавить к любому действию. Подробности и команды — в разделах ниже.
 
 Роль выполняет CRUD бакетов и пользователей MinIO в соответствии с описанием в переменных.
 
@@ -28,29 +29,18 @@
 - удаляет лишних пользователей только если включен флаг удаления;
 - защищает администратора и пользователя метрик от автоматического удаления.
 
-## Требования и переход с предыдущих версий
+## Требования
 
 До запуска роли установите `mc` (или `mcli`) и настройте административный alias на
 `minio_configuration_delegate_host`. В `minio_configuration_mc_binary_path` укажите
 полный путь с правильным именем бинарника. Роль выполняет `admin info <alias>` и
 останавливается, если бинарник отсутствует, alias не настроен или доступ не работает.
-Роль не устанавливает пакеты, не скачивает клиент, не меняет alias и не требует пароль администратора.
 
 Alias должен быть доступен пользователю, от которого Ansible выполняет команды,
 с учётом `become`. Адрес сервера, учётные данные и TLS задаются в конфигурации `mc`.
 Перед применением экспорта на другом сервере/delegate настройте alias отдельно.
 Если включено удаление пользователей, добавьте нестандартные административные и
 технические учётные записи в `minio_configuration_protected_users`.
-
-В версии 2.0.0 удалены переменные endpoint/scheme/port, учётных данных root,
-URL/checksum загрузки клиента и проверки сертификата при загрузке. Уберите их из
-inventory; необходимые настройки выполняйте вне роли. Поле `secret_key` прикладных
-пользователей сохранено.
-
-В версии 3.0.0 удалена `minio_configuration_mode`. Удалите её из inventory,
-extra vars и ранее экспортированных файлов. Для экспорта используйте `--tags export`,
-для просмотра — `--tags dryrun` или `--check`. При наличии старой переменной роль
-останавливается с пояснением; обычный запуск применяет конфигурацию.
 
 ## Переменные роли
 
@@ -123,7 +113,7 @@ minio_configuration_users:
 - `user`
 - `backet`
 - `ssl`
-- `dryrun` — просмотр запланированных операций без изменений
+- `dry`, `dryrun` — равнозначные теги просмотра запланированных операций без изменений
 - `export` — экспорт текущей конфигурации (имеет `never`, запускается явно)
 - `clean` (имеет `never`)
 
@@ -176,7 +166,7 @@ ansible-playbook -i inventory.ini roles/minio-configuration/examples/playbook.ym
 
 Тег `clean` удаляет объявленных пользователей (кроме защищённых), бакеты и созданные
 файлы политик. Флаги удаления лишних объектов на эту явную очистку не влияют.
-Просмотр очистки без изменений: `--tags dryrun,clean` или `--check --tags clean`.
+План очистки: `--tags dry,clean`. Штатная проверка Ansible для очистки: `--check --tags clean`.
 
 
 ```bash
@@ -286,7 +276,7 @@ minio_configuration_users:
 `Sid` прежняя политика отсоединяется, новая создаётся и назначается. Неиспользуемый
 документ старой политики на сервере не удаляется автоматически.
 
-Общие именованные политики и поле `policies` не поддерживаются. Перед любым
+Права задаются в `statements` каждого пользователя или группы. Перед любым
 изменением конфигурации роль читает прямые назначения внутренних пользователей
 и групп. Если политика с генерируемым именем уже назначена другой сущности
 (даже созданной вне роли), запуск прерывается до её изменения. Роль не снимает
@@ -426,16 +416,16 @@ statements:
 
 Пароли прикладных пользователей можно задавать через inventory, Ansible Vault или
 lookup HashiCorp Vault в переменных, например `secret_key: "{{ vault_app_secret }}"`.
-Для таких lookup сохранена переменная `minio_configuration_hashi_vault_path_password`.
+Для таких lookup используется переменная `minio_configuration_hashi_vault_path_password`.
 
-## Dryrun — просмотр операций
+## Dry — просмотр операций
 
 ```bash
-ANSIBLE_ROLES_PATH=roles ansible-playbook -i inventory.ini roles/minio-configuration/examples/playbook.yml --tags dryrun
-ANSIBLE_ROLES_PATH=roles ansible-playbook -i inventory.ini roles/minio-configuration/examples/playbook.yml --check
+ANSIBLE_ROLES_PATH=roles ansible-playbook -i inventory.ini roles/minio-configuration/examples/playbook.yml --tags dry
+ANSIBLE_ROLES_PATH=roles ansible-playbook -i inventory.ini roles/minio-configuration/examples/playbook.yml --tags dry --check
 ```
 
-Режим проверяет входные данные и alias, читает текущие бакеты, пользователей, группы,
+Теги `dry` и `dryrun` равнозначны. Режим проверяет входные данные и alias, читает текущие бакеты, пользователей, группы,
 политики и назначения. В `minio_configuration_plan` выводятся операции, объекты,
 документы политик, изменения членства и удаления, разрешённые флагами.
 Пароли заменяются на `[REDACTED]`. Каталоги, файлы политик и экспортный inventory
@@ -444,11 +434,26 @@ ANSIBLE_ROLES_PATH=roles ansible-playbook -i inventory.ini roles/minio-configura
 запись политик, паролей и настройку versioning; это не точный счётчик изменений.
 План отражает момент чтения: параллельные изменения и разрешения на запись могут повлиять на применение.
 
-Для пользователей/групп: `--tags dryrun,user` или `--check --tags user`. Для бакетов замените `user` на `backet`, для очистки — на `clean`.
-Один тег `dryrun` показывает обычный полный запуск без очистки.
-Если одновременно выбраны `export` и `dryrun`, приоритет имеет `export`.
-Стандартный `--check` включает просмотр применения/очистки; экспорт с `--check`
-читает сервер и предварительно проверяет запись inventory модулем `copy`.
+Для пользователей/групп: `--tags dry,user`. Для бакетов замените `user` на `backet`,
+для очистки — на `clean`. Один тег `dry` или `dryrun` показывает обычный полный запуск
+без очистки. Если выбран `export`, выполняется экспорт.
+
+## Штатный check mode Ansible
+
+`--check` не участвует в выборе действия роли. Допустимы все сочетания:
+
+```bash
+ANSIBLE_ROLES_PATH=roles ansible-playbook -i inventory.ini roles/minio-configuration/examples/playbook.yml --check
+ANSIBLE_ROLES_PATH=roles ansible-playbook -i inventory.ini roles/minio-configuration/examples/playbook.yml --tags dry --check
+ANSIBLE_ROLES_PATH=roles ansible-playbook -i inventory.ini roles/minio-configuration/examples/playbook.yml --tags export --check
+```
+
+Задачи выбранного действия выполняются согласно поддержке check mode их модулями.
+При обычном прогоне в check mode задачи применения проверяются модулями Ansible,
+а изменяющие команды `mc` пропускаются. Запросы чтения выполняются для проверки доступа
+и получения текущего состояния. Явный план `minio_configuration_plan` выводят только теги `dry`/`dryrun`.
+С `export --check` состояние MinIO читается, а модуль `copy` проверяет запись выгрузки
+без создания или перезаписи файла.
 
 ## Проверки
 
@@ -469,6 +474,8 @@ python -m unittest discover -s roles/minio-configuration/tests -v
 ANSIBLE_ROLES_PATH=roles ansible-playbook -i roles/minio-configuration/tests/inventory.yml roles/minio-configuration/tests/export.yml --tags export
 ANSIBLE_ROLES_PATH=roles ansible-playbook -i roles/minio-configuration/tests/inventory.yml roles/minio-configuration/tests/tags.yml --tags user
 ANSIBLE_ROLES_PATH=roles ansible-playbook -i roles/minio-configuration/tests/inventory.yml roles/minio-configuration/tests/dryrun.yml --tags dryrun
+ANSIBLE_ROLES_PATH=roles ansible-playbook -i roles/minio-configuration/tests/inventory.yml roles/minio-configuration/tests/check.yml --check
+ANSIBLE_ROLES_PATH=roles ansible-playbook -i roles/minio-configuration/tests/inventory.yml roles/minio-configuration/tests/export-check.yml --tags export --check
 ANSIBLE_ROLES_PATH=roles ansible-playbook -i roles/minio-configuration/tests/inventory.yml roles/minio-configuration/tests/prerequisites.yml
 ANSIBLE_ROLES_PATH=roles ansible-playbook -i roles/minio-configuration/tests/inventory.yml roles/minio-configuration/tests/groups.yml
 ANSIBLE_ROLES_PATH=roles ansible-playbook -i roles/minio-configuration/tests/inventory.yml roles/minio-configuration/tests/ownership.yml

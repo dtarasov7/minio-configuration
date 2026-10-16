@@ -23,6 +23,7 @@
   register: minio_configuration_group_info
   when: minio_configuration_group.name in minio_configuration_existing_groups
   changed_when: false
+  check_mode: false
   delegate_to: "{{ minio_configuration_delegate_host }}"
 
 - name: group.yaml - parse group configuration

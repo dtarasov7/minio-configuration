@@ -4,12 +4,16 @@
   ansible.builtin.command:
     argv: ["{{ minio_configuration_mc_binary_path }}", --json, admin, user, info, "{{ minio_configuration_alias }}", "{{ minio_configuration_group_user.name }}"]
   register: minio_configuration_user_group_info
+  when: >-
+    not ansible_check_mode or minio_configuration_group_user.name in
+    (minio_configuration_existing_users | default([minio_configuration_group_user.name]))
   changed_when: false
+  check_mode: false
   delegate_to: "{{ minio_configuration_delegate_host }}"
 
 - name: user-group.yaml - calculate current and desired memberships
   ansible.builtin.set_fact:
-    minio_configuration_current_user_groups: "{{ (minio_configuration_user_group_info.stdout | from_json).memberOf | default([]) | map(attribute='name') | list }}"
+    minio_configuration_current_user_groups: "{{ (minio_configuration_user_group_info.stdout | default('{}', true) | from_json).memberOf | default([]) | map(attribute='name') | list }}"
     minio_configuration_desired_user_groups: "{{ minio_configuration_group_user.groups | default([]) | unique | list }}"
 
 - name: user-group.yaml - remove user from undeclared groups

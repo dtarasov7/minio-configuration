@@ -95,6 +95,14 @@ class PlanTests(unittest.TestCase):
     def test_config_scope_has_no_mutations(self):
         self.assertEqual(self.plan(tags=['config']), [])
 
+    def test_dry_and_dryrun_select_the_same_full_plan(self):
+        arguments = {'users': [{'name': 'reader'}], 'buckets': [{'name': 'new-bucket'}]}
+        dry_plan = self.plan(tags=['dry'], **arguments)
+        dryrun_plan = self.plan(tags=['dryrun'], **arguments)
+        self.assertEqual(dry_plan, dryrun_plan)
+        self.assertIn({'action': 'ensure_bucket', 'target': 'new-bucket'}, dry_plan)
+        self.assertIn({'action': 'detach_policy', 'target': 'reader', 'kind': 'user', 'policy': 'read'}, dry_plan)
+
 
 if __name__ == '__main__':
     unittest.main()

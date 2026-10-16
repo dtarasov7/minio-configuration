@@ -1,0 +1,60 @@
+---
+- name: Verify native Ansible check mode uses apply tasks without a dry plan
+  hosts: minio_cluster
+  gather_facts: false
+  vars:
+    ansible_os_family: RedHat
+    minio_configuration_mc_binary_path: "{{ playbook_dir }}/fake_mc.py"
+    minio_configuration_alias: production
+    minio_configuration_policy_dir: "{{ playbook_dir }}/../../../.ansible/native-check-policies"
+    minio_configuration_users:
+      - name: disabled
+        groups: []
+        statements: []
+      - name: new-user
+        secret_key: native-check-secret
+        groups: [staff, new-group]
+        statements:
+          - Sid: Read
+            Effect: Allow
+            Action: ['s3:GetObject']
+            Resource: ['arn:aws:s3:::new-bucket/*']
+    minio_configuration_groups:
+      - name: staff
+      - name: new-group
+    minio_configuration_backets:
+      - name: new-bucket
+        anonymous_policy:
+          Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Principal: {AWS: ['*']}
+              Action: ['s3:GetObject']
+              Resource: ['arn:aws:s3:::new-bucket/*']
+  pre_tasks:
+
+    - name: Require check mode for this test
+      ansible.builtin.assert:
+        that:
+          - ansible_check_mode
+      tags: always
+  roles:
+    - minio-configuration
+  tasks:
+
+    - name: Inspect policy directory after check mode
+      ansible.builtin.stat:
+        path: "{{ minio_configuration_policy_dir }}"
+      register: native_check_directory
+      tags: always
+
+    - name: Verify apply selection and absence of writes or a dry plan
+      ansible.builtin.assert:
+        that:
+          - minio_configuration_effective_mode == 'apply'
+          - minio_configuration_plan is not defined
+          - minio_configuration_existing_users_raw is not skipped
+          - minio_configuration_existing_buckets_raw is not skipped
+          - minio_configuration_existing_groups_raw is not skipped
+          - not native_check_directory.stat.exists
+      tags: always

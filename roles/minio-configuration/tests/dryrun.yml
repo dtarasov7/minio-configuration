@@ -30,7 +30,7 @@
     - name: Require explicit dryrun selection for this test
       ansible.builtin.assert:
         that:
-          - "'dryrun' in ansible_run_tags or ansible_check_mode"
+          - "ansible_run_tags | intersect(['dry', 'dryrun']) | length > 0"
       tags: always
   roles:
     - minio-configuration

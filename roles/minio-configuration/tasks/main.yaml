@@ -16,6 +16,7 @@
   when: minio_configuration_effective_mode == 'dryrun'
   tags:
     - always
+    - dry
     - dryrun
 
 - name: main.yaml - export current configuration

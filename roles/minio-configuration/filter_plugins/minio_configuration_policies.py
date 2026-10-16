@@ -54,7 +54,7 @@ def configuration_plan(current, assignments, users, groups, buckets, rules,
     selected = set(tags)
     skipped = set(skip_tags or [])
     operation_tags = {'user', 'backet', 'install', 'clean', 'never', 'config', 'ssl', 'pre-req'}
-    if 'dryrun' in selected and not selected.intersection(operation_tags):
+    if selected.intersection({'dry', 'dryrun'}) and not selected.intersection(operation_tags):
         full_run = True
 
     def add(action, target, **details):

@@ -27,6 +27,7 @@
     argv: ["{{ minio_configuration_mc_binary_path }}", --json, admin, group, list, "{{ minio_configuration_alias }}"]
   register: minio_configuration_existing_groups_raw
   changed_when: false
+  check_mode: false
   when: minio_configuration_groups | length > 0
   run_once: true
   delegate_to: "{{ minio_configuration_delegate_host }}"
