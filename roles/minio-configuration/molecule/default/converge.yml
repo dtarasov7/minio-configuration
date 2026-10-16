@@ -42,6 +42,8 @@
     minio_configuration_backets:
     - name: b-test-a
       versioning: false
+    - name: b-test-empty
+      versioning: false
     - name: b-test-b
       versioning: false
     minio_configuration_users:
@@ -82,14 +84,23 @@
         Sid: Rule2
   roles:
   - role: minio-configuration
-- name: Converge updated MinIO configuration with deletion
+  tasks:
+
+    - name: converge.yml - seed data in a bucket omitted from the next configuration
+      ansible.builtin.shell: |
+        set -euo pipefail
+        printf 'preserve-this-data' | /usr/local/bin/mc pipe production/b-test-a/retained.txt
+      args:
+        executable: /bin/bash
+      run_once: true
+
+- name: Converge updated configuration with user deletion and bucket preservation
   hosts: minio_cluster
   become: false
   vars:
     ansible_python_interpreter: /usr/bin/python3
     minio_configuration_alias: production
     minio_configuration_metrics_user: minio_prometheus
-    minio_configuration_backets_delete: true
     minio_configuration_users_delete: true
     minio_configuration_backets:
     - name: b-test-b

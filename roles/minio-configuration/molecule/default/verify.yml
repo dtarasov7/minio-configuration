@@ -1,5 +1,5 @@
 ---
-- name: Verify MinIO configuration CRUD result
+- name: Verify MinIO configuration and bucket preservation
   hosts: minio1
   become: false
   gather_facts: false
@@ -29,11 +29,13 @@
           cat /tmp/molecule-buckets.jsonl
           exit 1
         }
-        if grep -q '"key":"b-test-a/"' /tmp/molecule-buckets.jsonl; then
-          echo 'Bucket b-test-a should be deleted'
-          cat /tmp/molecule-buckets.jsonl
-          exit 1
-        fi
+        for bucket in b-test-a b-test-empty; do
+          grep -q "\"key\":\"$bucket/\"" /tmp/molecule-buckets.jsonl || {
+            echo "Undeclared bucket $bucket should be preserved"
+            exit 1
+          }
+        done
+        /usr/local/bin/mc cat {{ minio_configuration_alias }}/b-test-a/retained.txt | grep -q preserve-this-data
 
         /usr/local/bin/mc admin user list {{ minio_configuration_alias }} --json > /tmp/molecule-users.jsonl
         grep -q '"accessKey":"u_test_rw"' /tmp/molecule-users.jsonl || {

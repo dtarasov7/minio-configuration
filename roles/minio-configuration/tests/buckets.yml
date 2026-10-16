@@ -1,0 +1,50 @@
+---
+- name: Verify bucket configuration never requests bucket removal
+  hosts: minio_cluster
+  gather_facts: false
+  vars:
+    minio_configuration_mc_binary_path: "{{ playbook_dir }}/bucket_mc.py"
+    minio_configuration_alias: production
+    minio_configuration_users: []
+    minio_configuration_groups: []
+    minio_configuration_backets:
+      - name: public
+        versioning: false
+      - name: private
+        versioning: true
+  tasks:
+
+    - name: Prepare fixture log directory
+      ansible.builtin.file:
+        path: '{{ playbook_dir }}/../../../.ansible'
+        state: directory
+        mode: '0700'
+
+    - name: Reset fixture command log
+      ansible.builtin.copy:
+        content: ''
+        dest: "{{ playbook_dir }}/../../../.ansible/bucket-commands.jsonl"
+        mode: '0600'
+
+    - name: Apply an empty bucket list
+      ansible.builtin.include_role:
+        name: minio-configuration
+        tasks_from: backet.yaml
+      vars:
+        minio_configuration_effective_backets: []
+
+    - name: Configure declared buckets
+      ansible.builtin.include_role:
+        name: minio-configuration
+        tasks_from: backet.yaml
+      vars:
+        minio_configuration_effective_backets: '{{ minio_configuration_backets }}'
+
+    - name: Read recorded commands
+      ansible.builtin.set_fact:
+        bucket_commands: "{{ lookup('file', playbook_dir + '/../../../.ansible/bucket-commands.jsonl').splitlines() | map('from_json') | list }}"
+
+    - name: Verify only bucket creation and versioning were requested
+      ansible.builtin.assert:
+        that:
+          - bucket_commands == [['mb', '--ignore-existing', 'production/public'], ['mb', '--ignore-existing', 'production/private'], ['version', 'suspend', 'production/public'], ['version', 'enable', 'production/private']]

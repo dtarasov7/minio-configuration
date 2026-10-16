@@ -8,7 +8,6 @@
     minio_configuration_alias: production
     minio_configuration_export_path: "{{ playbook_dir }}/../../../.ansible/export-check-must-not-exist.yml"
     minio_configuration_users_delete: true
-    minio_configuration_backets_delete: true
   pre_tasks:
 
     - name: Require export mode and check mode
@@ -35,5 +34,4 @@
           - minio_configuration_snapshot_result.configuration.minio_configuration_users | length == 2
           - not export_check_file.stat.exists
           - minio_configuration_existing_users_raw is not defined or minio_configuration_existing_users_raw is skipped
-          - minio_configuration_existing_buckets_raw is not defined or minio_configuration_existing_buckets_raw is skipped
       tags: always

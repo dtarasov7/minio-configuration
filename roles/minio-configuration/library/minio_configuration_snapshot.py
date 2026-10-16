@@ -167,7 +167,6 @@ class Snapshot:
                 'minio_configuration_users': users,
                 'minio_configuration_groups': groups,
                 'minio_configuration_exported_policies': documents,
-                'minio_configuration_backets_delete': False,
                 'minio_configuration_users_delete': False}
 
     def collect_assignments(self):

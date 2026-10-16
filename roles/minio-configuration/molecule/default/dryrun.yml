@@ -5,6 +5,7 @@
   vars:
     minio_configuration_mode: dry
     minio_configuration_alias: production
+    minio_configuration_dry_report_path: "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/minio-plan.yml"
     minio_configuration_backets:
       - name: b-dryrun-only
     minio_configuration_users:
@@ -12,3 +13,14 @@
         secret_key: dryrun_not_created_123
   roles:
     - minio-configuration
+  tasks:
+
+    - name: dryrun.yml - verify controller report contains planned additions without passwords
+      ansible.builtin.assert:
+        that:
+          - lookup('file', minio_configuration_dry_report_path) | from_yaml == minio_configuration_plan
+          - minio_configuration_plan.add | selectattr('type', 'equalto', 'bucket') | selectattr('name', 'equalto', 'b-dryrun-only') | list | length == 1
+          - minio_configuration_plan.add | selectattr('type', 'equalto', 'user') | selectattr('name', 'equalto', 'u_dryrun_only') | list | length == 1
+          - "'dryrun_not_created_123' not in lookup('file', minio_configuration_dry_report_path)"
+      when: not ansible_check_mode
+      run_once: true

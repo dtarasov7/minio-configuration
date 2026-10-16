@@ -7,9 +7,9 @@
     minio_configuration_mc_binary_path: "{{ playbook_dir }}/fake_mc.py"
     minio_configuration_alias: production
     minio_configuration_policy_dir: "{{ playbook_dir }}/../../../.ansible/dryrun-no-directory"
+    minio_configuration_dry_report_path: "{{ playbook_dir }}/../../../.ansible/dry-report{{ '-check' if ansible_check_mode else '' }}.yml"
     minio_configuration_protected_users: [reader]
     minio_configuration_users_delete: true
-    minio_configuration_backets_delete: true
     minio_configuration_users:
       - name: new-user
         secret_key: dryrun-secret-never-print
@@ -32,6 +32,14 @@
         that:
           - minio_configuration_mode == 'dry'
       tags: always
+
+    - name: Reset report fixture
+      ansible.builtin.file:
+        path: '{{ minio_configuration_dry_report_path }}'
+        state: absent
+      check_mode: false
+      when: minio_configuration_dry_report_path | length > 0
+      tags: always
   roles:
     - minio-configuration
   tasks:
@@ -47,10 +55,36 @@
         that:
           - minio_configuration_mode == 'dry'
           - minio_configuration_admin_info is succeeded
+          - minio_configuration_plan.delete | selectattr('type', 'equalto', 'bucket') | list | length == 0
           - not dryrun_directory.stat.exists
           - "'dryrun-secret-never-print' not in (minio_configuration_plan | to_json)"
-          - "({'action': 'create_user', 'target': 'new-user', 'secret_key': '[REDACTED]'} in minio_configuration_plan) == (expected_user_creation | default(true) | bool)"
-          - "({'action': 'ensure_bucket', 'target': 'new-bucket'} in minio_configuration_plan) == (expected_bucket_operation | default(true) | bool)"
-          - "({'action': 'remove_user', 'target': 'disabled'} in minio_configuration_plan) == (expected_user_deletion | default(true) | bool)"
-          - "{'action': 'remove_user', 'target': 'reader'} not in minio_configuration_plan"
+          - "({'type': 'user', 'name': 'new-user', 'action': 'create_user', 'secret_key': '[REDACTED]'} in minio_configuration_plan.add) == (expected_user_creation | default(true) | bool)"
+          - "({'type': 'bucket', 'name': 'new-bucket', 'action': 'create_bucket', 'versioning': true} in minio_configuration_plan.add) == (expected_bucket_operation | default(true) | bool)"
+          - "({'type': 'user', 'name': 'disabled', 'action': 'remove_user'} in minio_configuration_plan.delete) == (expected_user_deletion | default(true) | bool)"
+          - "{'type': 'user', 'name': 'reader', 'action': 'remove_user'} not in minio_configuration_plan.delete"
+      tags: always
+
+    - name: Check controller report
+      ansible.builtin.stat:
+        path: '{{ minio_configuration_dry_report_path }}'
+      register: dryrun_report
+      when: minio_configuration_dry_report_path | length > 0
+      tags: always
+
+    - name: Verify report writing follows native check mode
+      ansible.builtin.assert:
+        that:
+          - dryrun_report.stat.exists == (not ansible_check_mode)
+      when: minio_configuration_dry_report_path | length > 0
+      tags: always
+
+    - name: Verify saved summary matches console data and contains no password
+      ansible.builtin.assert:
+        that:
+          - lookup('file', minio_configuration_dry_report_path) | from_yaml == minio_configuration_plan
+          - "'dryrun-secret-never-print' not in lookup('file', minio_configuration_dry_report_path)"
+          - dryrun_report.stat.mode == '0600'
+      when:
+        - minio_configuration_dry_report_path | length > 0
+        - not ansible_check_mode
       tags: always

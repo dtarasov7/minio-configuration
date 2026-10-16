@@ -54,11 +54,3 @@
   when: minio_configuration_mode == 'apply'
   tags:
     - ssl
-
-- name: main.yaml - import clean tasks
-  ansible.builtin.import_tasks: clean.yaml
-  when: minio_configuration_mode == "apply"
-  tags:
-    - never
-    - clean
-

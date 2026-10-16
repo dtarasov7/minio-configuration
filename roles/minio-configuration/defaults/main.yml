@@ -1,11 +1,11 @@
 ---
 minio_configuration_mode: apply
+minio_configuration_dry_report_path: "{{ playbook_dir }}/minio-plan.yml"
 minio_configuration_nodes_group: minio_cluster
 minio_configuration_delegate_host: "{{ groups[minio_configuration_nodes_group][0] | default(inventory_hostname) }}"
 minio_configuration_metrics_user: minio_prometheus
 minio_configuration_alias: local
 minio_configuration_mc_binary_path: /usr/local/bin/mc
-minio_configuration_backets_delete: false
 minio_configuration_users_delete: false
 minio_configuration_backets:
   - name: b-default

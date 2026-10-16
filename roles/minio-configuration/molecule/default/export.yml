@@ -5,7 +5,6 @@
   vars:
     minio_configuration_mode: export
     minio_configuration_alias: production
-    minio_configuration_backets_delete: true
     minio_configuration_users_delete: true
     minio_configuration_export_path: '{{ lookup(''env'', ''MOLECULE_EPHEMERAL_DIRECTORY'') }}/minio-inventory.yml'
   roles:

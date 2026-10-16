@@ -1,5 +1,26 @@
 # Changes
 
+## 3.5.0 — 2026-10-16
+
+- Dry prints a summary of cluster additions, updates and removals; reads and local directory/file preparation are excluded from the plan.
+- The plan compares bucket existence, versioning, statuses, JSON policies and assignments with current state; distinguishes policy creation from updates and includes group creation.
+- Added `minio_configuration_dry_report_path` for a mode-0600 YAML report on the Ansible controller; an empty string disables saving and native `--check` does not write the report.
+- Passwords are redacted; explicit password updates and public anonymous preset settings remain planned operations.
+- Updated both READMEs and tests for state comparison, summaries, tag filtering and report persistence.
+
+## 3.4.0 — 2026-10-16
+
+- Completely removed the `clean` stage: its task file, import, `clean`/`never` tags, and cleanup of declared users and generated policy files.
+- Removed cleanup operations from the dry plan; retained deletion of users omitted from inventory through the explicit `minio_configuration_users_delete` flag, respecting protected accounts.
+- Updated tests, both READMEs and request documentation. Preserved changelog history.
+
+## 3.3.0 — 2026-10-16
+
+- Completely excluded bucket deletion, both for buckets omitted from inventory and declared buckets during `clean`; empty/nonempty buckets and their contents are preserved.
+- Removed `minio_configuration_backets_delete`, its derived settings and bucket-deletion operations from the dry plan.
+- `clean` only removes declared unprotected users and generated policy files on the delegate host.
+- Updated READMEs, request documentation and tests; Molecule checks preservation of an empty bucket and data in a nonempty bucket omitted from inventory.
+
 ## 3.2.0 — 2026-10-16
 
 - Role behavior is selected by `minio_configuration_mode`: `apply` (default), `dry` or `export`, configured in inventory or through `-e`.

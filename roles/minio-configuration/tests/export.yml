@@ -6,7 +6,6 @@
     minio_configuration_mc_binary_path: "{{ playbook_dir }}/fake_mc.py"
     ansible_os_family: RedHat
     minio_configuration_alias: production
-    minio_configuration_backets_delete: true
     minio_configuration_users_delete: true
     minio_configuration_export_path: "{{ playbook_dir }}/../../../.ansible/exported-inventory.yml"
   tasks:
@@ -64,7 +63,6 @@
           - exported.minio_configuration_backets[1].keys() | list == ['name', 'anonymous_policy', 'versioning']
           - minio_configuration_mode == 'export'
           - minio_configuration_existing_users_raw is not defined or minio_configuration_existing_users_raw is skipped
-          - minio_configuration_existing_buckets_raw is not defined or minio_configuration_existing_buckets_raw is skipped
           - minio_configuration_policy_assignments is not defined or minio_configuration_policy_assignments is skipped
 
     - name: Require name to be the first field of every exported entity

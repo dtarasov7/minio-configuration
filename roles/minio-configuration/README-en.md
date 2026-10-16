@@ -1,6 +1,6 @@
 # minio-configuration
 
-Role version: **3.2.0**.
+Role version: **3.5.0**.
 
 ## Run modes at a glance
 
@@ -9,7 +9,6 @@ Role version: **3.2.0**.
 | Apply configuration | `-e minio_configuration_mode=apply` (default) |
 | Export current configuration | `-e minio_configuration_mode=export` |
 | Preview operations without changes | `-e minio_configuration_mode=dry` |
-| Remove declared users and buckets | `--tags clean` |
 
 Set `minio_configuration_mode` to `apply`, `dry` or `export` in inventory
 (`group_vars`/`host_vars`) or through `-e` on the command line. Native Ansible `--check`
@@ -17,6 +16,8 @@ is independent and can be combined with any role mode. Detailed commands appear 
 
 Configure MinIO buckets, anonymous access and built-in IAM users through `mc`,
 or export their current configuration as YAML variables for an Ansible inventory.
+Only an administrator manually removes buckets on the cluster, whether empty or nonempty.
+Buckets omitted from inventory and their contents are preserved.
 
 ## Prerequisites
 
@@ -36,6 +37,7 @@ accounts to `minio_configuration_protected_users` when deletion is enabled.
 | Variable | Default | Meaning |
 |---|---|---|
 | `minio_configuration_mode` | `apply` | `apply`, `dry` or `export` |
+| `minio_configuration_dry_report_path` | `{{ playbook_dir }}/minio-plan.yml` | Controller-side dry summary; empty string disables saving |
 | `minio_configuration_nodes_group` | `minio_cluster` | Inventory group |
 | `minio_configuration_delegate_host` | First group member | Host running `mc` |
 | `minio_configuration_metrics_user` | `minio_prometheus` | Protected metrics user |
@@ -43,7 +45,6 @@ accounts to `minio_configuration_protected_users` when deletion is enabled.
 | `minio_configuration_mc_binary_path` | `/usr/local/bin/mc` | Full path including the executable name, e.g. `/opt/minio/mcli` |
 | `minio_configuration_backets` | Bucket `b-default`, versioning disabled | Bucket definitions |
 | `minio_configuration_users` | Explicit read and write IAM statements on `b-default` | See defaults/main.yml; override passwords |
-| `minio_configuration_backets_delete` | `false` | Delete undeclared buckets |
 | `minio_configuration_users_delete` | `false` | Delete undeclared users |
 | `minio_configuration_protected_users` | `[minioadmin, minio_prometheus]` | Excluded from automatic deletion |
 | `minio_configuration_export_path` | `{{ playbook_dir }}/minio-inventory.yml` | Controller YAML variables file; parent directory must exist |
@@ -191,7 +192,7 @@ minio_cluster:
 ## Applying configuration
 
 With `minio_configuration_mode: apply`, the role applies declared buckets, users, groups and policies. Use `--tags user`
-or `--tags backet` to apply a subset. Export and cleanup do not run by default.
+or `--tags backet` to apply a subset. Export runs with `minio_configuration_mode: export`.
 
 From the repository root:
 
@@ -211,12 +212,12 @@ ANSIBLE_ROLES_PATH=roles ansible-playbook -i inventory.yml roles/minio-configura
 Set `minio_configuration_mode: export` in inventory or use `-e minio_configuration_mode=export`.
 Export uses the installed client and existing alias. It checks `mc admin info`, reads
 the server and writes a mode-0600 inventory on the controller. Server objects remain
-unchanged even when deletion flags are true.
+unchanged even with `minio_configuration_users_delete: true`.
 The file contains exactly three top-level variables in this order:
 `minio_configuration_users`, `minio_configuration_groups`, `minio_configuration_backets`.
 Load it through `group_vars`, `vars_files` or `-e @file.yml`, or copy it into the inventory's
 `vars` section. It contains no `all/children/hosts` wrapper, connection settings, alias,
-deletion flags or separate policy list.
+the user-deletion flag or a separate policy list.
 
 Each entity starts with `name`. Bucket fields follow the order `name`, `anonymous`
 or `anonymous_policy`, then `versioning`. For example:
@@ -256,8 +257,8 @@ exported separately. Reapplying the file creates exclusive owner policies withou
 modifying the former shared policies. Valid unique Sids are preserved. Missing, invalid
 or duplicate Sids receive stable Export<sha256> identifiers; the remaining rule content
 is preserved. Export aborts on read errors without replacing the file with partial
-results. Repeated exports replace the file. Configure connection settings and deletion
-flags separately in inventory.
+results. Repeated exports replace the file. Configure connection settings and the user-deletion
+flag separately in inventory.
 
 Passwords cannot be recovered. Existing users keep passwords; migration to a new server
 requires adding their secret_key values and preconfiguring the alias for that server.
@@ -270,13 +271,6 @@ Application user passwords can use inventory variables, Ansible Vault, or variab
 HashiCorp Vault lookups, for example `secret_key: "{{ vault_app_secret }}"`.
 Use `minio_configuration_hashi_vault_path_password` for these lookups.
 
-## Cleanup
-
-With `minio_configuration_mode: apply`, use `--tags clean` to remove declared users (except protected users), buckets and
-generated policy files. Flags for deleting undeclared objects do not control this
-explicit cleanup. Print its plan with `-e minio_configuration_mode=dry --tags clean`; run native Ansible checks
-with `--check --tags clean`.
-
 ## Dry preview
 
 ```bash
@@ -284,17 +278,41 @@ ANSIBLE_ROLES_PATH=roles ansible-playbook -i inventory.yml roles/minio-configura
 ANSIBLE_ROLES_PATH=roles ansible-playbook -i inventory.yml roles/minio-configuration/examples/playbook.yml -e minio_configuration_mode=dry --check
 ```
 
-With `minio_configuration_mode: dry`, the role validates input, checks the alias and reads the current buckets, users, groups,
-policies and assignments. It prints `minio_configuration_plan` with operation names,
-targets, policy documents, membership changes and deletions permitted by the flags.
-User passwords appear as `[REDACTED]`. It does not write policy files, create directories,
-export inventory, or run mutating mc commands. Reads against MinIO are performed.
-The plan describes operations the apply tasks would attempt, including repeated
-policy updates, password updates and versioning settings; it is not an exact change count.
-It is a snapshot: concurrent changes and server-side write authorization can affect apply.
+With `minio_configuration_mode: dry`, the role reads cluster state and prints three
+lists: **“Планируем добавить”** (planned additions), **“Планируем изменить”**
+(planned updates), and **“Планируем удалить”** (planned removals). Entries contain
+an object type, name, action and parameters. The same summary is available as
+`minio_configuration_plan`, with `add`, `change` and `delete` keys. An empty plan
+prints “Изменения в кластере не требуются” (no cluster changes required).
 
-Use `-e minio_configuration_mode=dry --tags user` for user/group operations; replace `user` with `backet` for buckets
-or `clean` for cleanup. Without tags, dry mode prints the complete plan excluding cleanup.
+The summary covers buckets, users, groups, policy documents, policy assignments
+and group membership. It excludes reads, directory preparation and generated policy
+files. Reads execute immediately for comparison; normal Ansible output still shows
+these service tasks. No mutating `mc` commands execute.
+
+Existing buckets are not listed as additions. Matching versioning, statuses,
+explicit JSON policies and assignments are omitted. A supplied `secret_key` always
+plans a password update for an existing user because its current value cannot be
+read for comparison. Passwords are replaced by `[REDACTED]`.
+Public `anonymous: download|upload|public` presets are listed as requested settings:
+the snapshot contains the policy document rather than the original preset name.
+Removing a policy assignment revokes its direct attachment, preserving the policy
+document on the server. Buckets are never removed.
+
+The same summary is saved **on the Ansible controller** to
+`minio_configuration_dry_report_path` (default `{{ playbook_dir }}/minio-plan.yml`).
+It uses YAML and mode `0600`; repeated runs replace the file. The parent directory
+must exist. Set an empty string to disable saving. With `--check`, the summary is
+printed but the file is not created or overwritten, following native `copy` behavior.
+
+```bash
+ansible-playbook -i inventory.yml roles/minio-configuration/examples/playbook.yml \
+  -e minio_configuration_mode=dry -e minio_configuration_dry_report_path=/tmp/minio-plan.yml
+```
+
+Use `-e minio_configuration_mode=dry --tags user` for user/group operations; replace `user` with `backet` for buckets.
+Without tags, dry mode prints the complete plan; `--skip-tags` excludes selected stages.
+The plan is a snapshot: concurrent changes and server-side write authorization may affect apply.
 To select this mode in inventory, set `minio_configuration_mode: dry`.
 
 ## Native Ansible check mode
@@ -315,16 +333,15 @@ module previews writing the export without creating or overwriting the file.
 
 ## Tags and tests
 
-Tags: `install`, `config`, `backet`, `user`, `ssl` and `clean`.
-The `clean` tag uses `never` and requires explicit selection. Preflight and existing alias checks use
+Tags: `install`, `config`, `backet`, `user` and `ssl`.
+Preflight and existing alias checks use
 `always` and run with each operational tag. `install` only prepares the policy directory;
 `user` and `backet` also prepare it when policy files are needed. Nested validation and reconciliation tasks receive the required tags.
 Tags select apply stages and corresponding plan sections in dry mode. Export mode
 runs access checks and export regardless of the selected stage tags.
-Cleanup removes declared users/buckets and is explicitly invoked with `--tags clean`.
 
 Molecule uses four prebuilt `redos:7.3.6` Docker containers and `minio-cluster`.
-It covers CRUD, read/write restrictions, granular access, anonymous presets,
+It covers configuration changes, user deletion, bucket/data preservation, read/write restrictions, granular access, anonymous presets,
 explicit bucket-creation denial, dryrun without side effects and export/replay. Run `molecule test` from the
 role directory with images and dependencies available.
 

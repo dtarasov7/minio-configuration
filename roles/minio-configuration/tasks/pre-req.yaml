@@ -26,7 +26,6 @@
   ansible.builtin.set_fact:
     minio_configuration_effective_backets: "{{ minio_configuration_backets if minio_configuration_mode in ['apply', 'dry'] else [] }}"
     minio_configuration_effective_users: "{{ minio_configuration_users if minio_configuration_mode in ['apply', 'dry'] else [] }}"
-    minio_configuration_effective_backets_delete: '{{ minio_configuration_backets_delete | bool }}'
     minio_configuration_effective_users_delete: '{{ minio_configuration_users_delete | bool }}'
   no_log: '{{ minio_configuration_no_log }}'
   run_once: true

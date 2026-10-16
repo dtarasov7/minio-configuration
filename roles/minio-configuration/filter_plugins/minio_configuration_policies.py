@@ -1,6 +1,5 @@
 """Build owner-specific, per-statement MinIO policy definitions."""
 import copy
-import hashlib
 import re
 
 from ansible.errors import AnsibleFilterError
@@ -44,22 +43,19 @@ def policy_names(owner, kind):
 
 
 def configuration_plan(current, assignments, users, groups, buckets, rules,
-                       users_delete, buckets_delete, protected_users, policy_dir, tags, skip_tags=None):
-    """Describe apply/clean operations using a read-only server snapshot."""
+                       users_delete, protected_users, tags, skip_tags=None):
+    """Describe planned cluster mutations using a read-only server snapshot."""
     operations = []
     existing_users = {user['name']: copy.deepcopy(user) for user in current['minio_configuration_users']}
     existing_groups = {group['name']: copy.deepcopy(group) for group in current['minio_configuration_groups']}
-    existing_buckets = {bucket['name'] for bucket in current['minio_configuration_backets']}
+    existing_buckets = {bucket['name']: bucket for bucket in current['minio_configuration_backets']}
+    existing_policies = current['minio_configuration_exported_policies']
     full_run = not tags or bool(set(tags) & {'all', 'tagged'})
     selected = set(tags)
     skipped = set(skip_tags or [])
 
     def add(action, target, **details):
         operations.append(dict(action=action, target=target, **details))
-
-    def policy_file(name):
-        digest = hashlib.sha256(name.encode('utf-8')).hexdigest()
-        return policy_dir + '/' + digest + '.json'
 
     def reconcile_policies(owner, kind):
         identity = {'kind': kind, 'name': owner['name']}
@@ -70,44 +66,22 @@ def configuration_plan(current, assignments, users, groups, buckets, rules,
         for name in sorted(desired - attached):
             add('attach_policy', owner['name'], kind=kind, policy=name)
 
-    if (selected.intersection({'clean', 'never'})) and not skipped.intersection({'clean', 'never'}):
-        for user in users:
-            if user['name'] not in protected_users:
-                add('remove_user', user['name'])
-        for bucket in buckets:
-            add('remove_bucket', bucket['name'], force=True)
-            add('remove_file', policy_dir + '/anonymous-' + bucket['name'] + '.json')
-        for rule in rules:
-            add('remove_file', policy_file(rule['name']))
-        # A full run with clean explicitly selected applies changes before cleanup.
-        if not full_run and not selected.intersection({'user', 'backet', 'install'}):
-            return operations
-        cleanup = operations
-        operations = []
-    else:
-        cleanup = []
-
-    needs_policy_dir = bool(rules) or any('anonymous_policy' in bucket for bucket in buckets)
-    prepare_directory = full_run or bool(selected.intersection({'install', 'user', 'backet'}))
-    if prepare_directory and not skipped.intersection({'install', 'user', 'backet'}) and (needs_policy_dir or 'install' in selected):
-        add('ensure_directory', policy_dir, mode='0755')
-
     if (full_run or 'backet' in selected) and 'backet' not in skipped:
         for bucket in buckets:
-            add('ensure_bucket', bucket['name'])
-        for bucket in buckets:
-            add('set_versioning', bucket['name'], enabled=to_bool(bucket.get('versioning', False)))
-        if buckets_delete:
-            desired_buckets = {bucket['name'] for bucket in buckets}
-            for name in sorted(existing_buckets - desired_buckets):
-                add('remove_bucket', name, force=True)
-        for bucket in buckets:
+            name = bucket['name']
+            actual = existing_buckets.get(name)
+            if actual is None:
+                add('create_bucket', name, versioning=to_bool(bucket.get('versioning', False)))
+            elif actual['versioning'] != to_bool(bucket.get('versioning', False)):
+                add('set_versioning', name, enabled=to_bool(bucket.get('versioning', False)))
             if 'anonymous' in bucket:
-                add('set_anonymous', bucket['name'], preset=bucket['anonymous'])
-            if 'anonymous_policy' in bucket:
-                path = policy_dir + '/anonymous-' + bucket['name'] + '.json'
-                add('write_policy_file', path, document=bucket['anonymous_policy'])
-                add('set_anonymous_policy', bucket['name'], document=bucket['anonymous_policy'])
+                preset = bucket['anonymous']
+                # Snapshot documents identify private access; other presets are requested writes.
+                already_private = (actual is None or actual.get('anonymous') == 'none')
+                if preset not in ('none', 'private') or not already_private:
+                    add('set_anonymous', name, preset=preset)
+            if 'anonymous_policy' in bucket and (actual is None or actual.get('anonymous_policy') != bucket['anonymous_policy']):
+                add('set_anonymous_policy', name, document=bucket['anonymous_policy'])
 
     if (full_run or 'user' in selected) and 'user' not in skipped:
         for rule in rules:
@@ -125,20 +99,25 @@ def configuration_plan(current, assignments, users, groups, buckets, rules,
             existing_users.setdefault(name, {'groups': [], 'status': 'enabled'})
         for rule in rules:
             document = {'Version': '2012-10-17', 'Statement': [rule['statement']]}
-            add('write_policy_file', policy_file(rule['name']), document=document)
-        for rule in rules:
-            add('create_or_update_policy', rule['name'], document={
-                'Version': '2012-10-17', 'Statement': [rule['statement']]})
+            actual_document = existing_policies.get(rule['name'])
+            if actual_document != document:
+                action = 'create_policy' if actual_document is None else 'update_policy'
+                add(action, rule['name'], owner_type=rule['kind'], owner=rule['owner'], document=document)
         for group in groups:
             name = group['name']
             desired_members = set(group.get('members', []))
             desired_members.update(user['name'] for user in users if name in user.get('groups', []))
             if name not in existing_groups and not desired_members:
                 raise AnsibleFilterError('mc cannot create an empty group: ' + name)
-            actual_group = existing_groups.get(name, {'members': [], 'status': ''})
+            new_group = name not in existing_groups
+            actual_group = existing_groups.get(name, {'members': [], 'status': 'enabled'})
+            if new_group:
+                add('create_group', name, members=sorted(desired_members))
+                existing_groups[name] = actual_group
             actual_members = set(actual_group['members'])
             for member in sorted(desired_members - actual_members):
-                add('add_group_member', name, user=member)
+                if not new_group:
+                    add('add_group_member', name, user=member)
                 if member in existing_users:
                     existing_users[member]['groups'].append(name)
             if 'members' in group:
@@ -159,19 +138,53 @@ def configuration_plan(current, assignments, users, groups, buckets, rules,
             for group in sorted(actual_groups - desired_groups):
                 add('remove_group_member', group, user=name)
             for group in sorted(desired_groups - actual_groups):
-                add('add_group_member', group, user=name)
+                if group not in existing_groups:
+                    add('create_group', group, members=[name])
+                    existing_groups[group] = {'members': [name], 'status': 'enabled'}
+                else:
+                    add('add_group_member', group, user=name)
         for user in users:
-            if 'status' in user:
+            if 'status' in user and user['status'] != existing_users[user['name']]['status']:
                 add('set_user_status', user['name'], status=user['status'])
         if users_delete:
             desired_users = {user['name'] for user in users}
             for name in sorted(set(existing_users) - desired_users - set(protected_users)):
                 add('remove_user', name)
-    return operations + cleanup
+    return operations
+
+
+def plan_summary(operations):
+    """Group cluster mutations for console output and a controller-side YAML report."""
+    categories = {
+        'create_bucket': ('add', 'bucket'),
+        'create_user': ('add', 'user'),
+        'create_group': ('add', 'group'),
+        'create_policy': ('add', 'policy'),
+        'attach_policy': ('add', 'policy_assignment'),
+        'add_group_member': ('add', 'group_member'),
+        'set_versioning': ('change', 'bucket'),
+        'set_anonymous': ('change', 'bucket'),
+        'set_anonymous_policy': ('change', 'bucket'),
+        'update_user_password': ('change', 'user'),
+        'set_user_status': ('change', 'user'),
+        'set_group_status': ('change', 'group'),
+        'update_policy': ('change', 'policy'),
+        'remove_user': ('delete', 'user'),
+        'detach_policy': ('delete', 'policy_assignment'),
+        'remove_group_member': ('delete', 'group_member'),
+    }
+    summary = {'add': [], 'change': [], 'delete': []}
+    for operation in operations:
+        category, kind = categories[operation['action']]
+        entry = {'type': kind, 'name': operation['target'], 'action': operation['action']}
+        entry.update({key: value for key, value in operation.items() if key not in ('target', 'action')})
+        summary[category].append(entry)
+    return summary
 
 
 class FilterModule:
     def filters(self):
         return {'minio_configuration_policy_definitions': policy_definitions,
                 'minio_configuration_policy_names': policy_names,
-                'minio_configuration_plan': configuration_plan}
+                'minio_configuration_plan': configuration_plan,
+                'minio_configuration_plan_summary': plan_summary}

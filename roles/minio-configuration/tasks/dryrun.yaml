@@ -24,12 +24,32 @@
            minio_configuration_dryrun_assignments.assignments,
            minio_configuration_effective_users, minio_configuration_groups,
            minio_configuration_effective_backets, minio_configuration_rule_policies,
-           minio_configuration_effective_users_delete, minio_configuration_effective_backets_delete,
-           minio_configuration_protected_users, minio_configuration_policy_dir, ansible_run_tags, ansible_skip_tags) }}
+           minio_configuration_effective_users_delete,
+           minio_configuration_protected_users, ansible_run_tags, ansible_skip_tags) | minio_configuration_plan_summary }}
   no_log: "{{ minio_configuration_no_log }}"
   run_once: true
 
 - name: dryrun.yaml - show planned operations without secrets
   ansible.builtin.debug:
-    var: minio_configuration_plan
+    msg:
+      'Планируем добавить': '{{ minio_configuration_plan.add }}'
+      'Планируем изменить': '{{ minio_configuration_plan.change }}'
+      'Планируем удалить': '{{ minio_configuration_plan.delete }}'
+  when: minio_configuration_plan.add | length + minio_configuration_plan.change | length + minio_configuration_plan.delete | length > 0
+  run_once: true
+
+- name: dryrun.yaml - report unchanged cluster configuration
+  ansible.builtin.debug:
+    msg: 'Изменения в кластере не требуются.'
+  when: minio_configuration_plan.add | length + minio_configuration_plan.change | length + minio_configuration_plan.delete | length == 0
+  run_once: true
+
+- name: dryrun.yaml - save planned cluster changes on the controller
+  ansible.builtin.copy:
+    content: '{{ minio_configuration_plan | to_nice_yaml(sort_keys=false) }}'
+    dest: '{{ minio_configuration_dry_report_path }}'
+    mode: '0600'
+  when: minio_configuration_dry_report_path | length > 0
+  become: false
+  delegate_to: localhost
   run_once: true

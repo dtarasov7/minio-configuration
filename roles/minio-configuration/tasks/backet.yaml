@@ -22,40 +22,6 @@
   run_once: true
   delegate_to: "{{ minio_configuration_delegate_host }}"
 
-- name: backet.yaml - collect existing buckets
-  ansible.builtin.command:
-    cmd: "{{ minio_configuration_mc_binary_path }} ls {{ minio_configuration_alias }} --json"
-  register: minio_configuration_existing_buckets_raw
-  changed_when: false
-  check_mode: false
-  run_once: true
-  delegate_to: "{{ minio_configuration_delegate_host }}"
-
-- name: backet.yaml - build existing bucket list
-  ansible.builtin.set_fact:
-    minio_configuration_existing_buckets: >-
-      {{
-        (minio_configuration_existing_buckets_raw.stdout_lines | default([])
-        | reject('equalto', '')
-        | map('from_json')
-        | map(attribute='key')
-        | map('regex_replace', '/$', '')
-        | list)
-      }}
-    minio_configuration_desired_bucket_names: "{{ minio_configuration_effective_backets | map(attribute='name') | list }}"
-  run_once: true
-
-- name: backet.yaml - delete unmanaged buckets when enabled
-  ansible.builtin.command:
-    cmd: "{{ minio_configuration_mc_binary_path }} rb --force {{ minio_configuration_alias }}/{{ item }}"
-  loop: "{{ minio_configuration_existing_buckets | difference(minio_configuration_desired_bucket_names) }}"
-  loop_control:
-    label: "{{ item }}"
-  when: minio_configuration_effective_backets_delete | bool
-  run_once: true
-  delegate_to: "{{ minio_configuration_delegate_host }}"
-
-
 - name: backet.yaml - configure anonymous preset
   ansible.builtin.command:
     argv: ["{{ minio_configuration_mc_binary_path }}", anonymous, set, "{{ item.anonymous }}", "{{ minio_configuration_alias }}/{{ item.name }}"]

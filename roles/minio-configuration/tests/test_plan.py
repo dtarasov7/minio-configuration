@@ -15,8 +15,8 @@ class PlanTests(unittest.TestCase):
         users = users or []
         groups = groups or []
         rules = POLICIES.policy_definitions(users, groups)
-        arguments = dict(users_delete=False, buckets_delete=False,
-                         protected_users=['reader'], policy_dir='/policies', tags=['all'])
+        arguments = dict(users_delete=False,
+                         protected_users=['reader'], tags=['all'])
         arguments.update(options)
         return POLICIES.configuration_plan(self.current, self.assignments, users, groups,
                                            buckets or [], rules, **arguments)
@@ -25,28 +25,34 @@ class PlanTests(unittest.TestCase):
         user = {'name': 'new', 'secret_key': 'never-print-this', 'statements': READ['Statement']}
         plan = self.plan(users=[user], buckets=[{'name': 'new-bucket', 'versioning': True}])
         self.assertIn({'action': 'create_user', 'target': 'new', 'secret_key': '[REDACTED]'}, plan)
-        self.assertIn({'action': 'ensure_bucket', 'target': 'new-bucket'}, plan)
-        self.assertIn({'action': 'set_versioning', 'target': 'new-bucket', 'enabled': True}, plan)
+        self.assertIn({'action': 'create_bucket', 'target': 'new-bucket', 'versioning': True}, plan)
         self.assertNotIn('never-print-this', json.dumps(plan))
-        self.assertEqual(len([op for op in plan if op['action'] == 'create_or_update_policy']), 2)
+        self.assertEqual(len([op for op in plan if op['action'] == 'create_policy']), 2)
 
     def test_versioning_uses_ansible_boolean_conversion(self):
         for value, expected in [('false', False), ('true', True), (False, False), (True, True)]:
             with self.subTest(value=value):
                 plan = self.plan(buckets=[{'name': 'public', 'versioning': value}])
                 operation = {'action': 'set_versioning', 'target': 'public', 'enabled': expected}
-                self.assertIn(operation, plan)
+                self.assertEqual(operation in plan, expected is False)
 
     def test_deletion_respects_protected_users(self):
-        plan = self.plan(users_delete=True, buckets_delete=True)
+        plan = self.plan(users_delete=True)
         deleted_users = [op['target'] for op in plan if op['action'] == 'remove_user']
         self.assertEqual(deleted_users, ['disabled'])
         deleted_buckets = [op['target'] for op in plan if op['action'] == 'remove_bucket']
-        self.assertEqual(deleted_buckets, ['private', 'public'])
+        self.assertEqual(deleted_buckets, [])
+
+    def test_buckets_are_never_removed(self):
+        for tags in [['all'], ['backet'], ['user']]:
+            for buckets in [[], [{'name': 'public'}]]:
+                with self.subTest(tags=tags, buckets=buckets):
+                    plan = self.plan(buckets=buckets, tags=tags)
+                    self.assertFalse(any(op['action'] == 'remove_bucket' for op in plan))
 
     def test_user_tag_omits_bucket_operations(self):
         plan = self.plan(users=[{'name': 'reader'}], buckets=[{'name': 'new-bucket'}], tags=['user'])
-        self.assertFalse(any(op['action'] == 'ensure_bucket' for op in plan))
+        self.assertFalse(any(op['action'] == 'create_bucket' for op in plan))
         self.assertIn({'action': 'remove_group_member', 'target': 'staff', 'user': 'reader'}, plan)
         detached = [op['policy'] for op in plan if op['action'] == 'detach_policy']
         self.assertEqual(detached, ['deny', 'read'])
@@ -62,13 +68,6 @@ class PlanTests(unittest.TestCase):
         plan = self.plan(users=[{'name': 'reader', 'secret_key': 'newsecret'}])
         self.assertIn({'action': 'update_user_password', 'target': 'reader', 'secret_key': '[REDACTED]'}, plan)
         self.assertNotIn('newsecret', json.dumps(plan))
-
-    def test_clean_only_plans_cleanup(self):
-        users = [{'name': 'reader'}, {'name': 'disabled'}]
-        plan = self.plan(users=users, buckets=[{'name': 'public'}], tags=['clean'])
-        self.assertEqual(plan[0], {'action': 'remove_user', 'target': 'disabled'})
-        self.assertFalse(any(op['action'].startswith('ensure_') for op in plan))
-        self.assertIn({'action': 'remove_file', 'target': '/policies/anonymous-public.json'}, plan)
 
     def test_new_user_without_password_is_rejected(self):
         with self.assertRaisesRegex(Exception, 'New user requires secret_key'):
@@ -88,9 +87,47 @@ class PlanTests(unittest.TestCase):
     def test_skipped_tags_are_excluded_from_plan(self):
         plan = self.plan(users=[{'name': 'reader'}], buckets=[{'name': 'new-bucket'}],
                          skip_tags=['user'])
-        self.assertIn({'action': 'ensure_bucket', 'target': 'new-bucket'}, plan)
+        self.assertIn({'action': 'create_bucket', 'target': 'new-bucket', 'versioning': False}, plan)
         self.assertFalse(any(op['action'] in ['detach_policy', 'remove_group_member'] for op in plan))
-        self.assertEqual(self.plan(tags=['clean'], skip_tags=['clean']), [])
+        self.assertEqual(self.plan(tags=['backet'], skip_tags=['backet']), [])
+
+    def test_matching_cluster_state_produces_empty_summary(self):
+        user = {'name': 'disabled', 'status': 'disabled'}
+        buckets = self.current['minio_configuration_backets']
+        plan = self.plan(users=[user], buckets=buckets)
+        self.assertEqual(POLICIES.plan_summary(plan), {'add': [], 'change': [], 'delete': []})
+
+    def test_existing_buckets_only_report_changed_settings(self):
+        plan = self.plan(buckets=[{'name': 'private', 'anonymous': 'private'},
+                                  {'name': 'public', 'versioning': False, 'anonymous': 'none'}])
+        self.assertEqual(plan, [
+            {'action': 'set_versioning', 'target': 'public', 'enabled': False},
+            {'action': 'set_anonymous', 'target': 'public', 'preset': 'none'}])
+
+    def test_existing_policies_are_compared_by_document(self):
+        user = {'name': 'reader', 'groups': ['staff'], 'statements': READ['Statement']}
+        definitions = POLICIES.policy_definitions([user], [])
+        for rule in definitions:
+            self.current['minio_configuration_exported_policies'][rule['name']] = {
+                'Version': '2012-10-17', 'Statement': [rule['statement']]}
+        self.assignments = {rule['name']: [{'kind': 'user', 'name': 'reader'}] for rule in definitions}
+        self.assertEqual(self.plan(users=[user]), [])
+        self.current['minio_configuration_exported_policies'][definitions[0]['name']] = {'Statement': []}
+        plan = self.plan(users=[user])
+        self.assertEqual(len(plan), 1)
+        self.assertEqual(plan[0]['action'], 'update_policy')
+
+    def test_summary_groups_cluster_mutations_and_redacts_passwords(self):
+        plan = self.plan(users=[{'name': 'new', 'secret_key': 'secret123', 'groups': ['new-group']}],
+                         buckets=[{'name': 'new-bucket'}], users_delete=True)
+        summary = POLICIES.plan_summary(plan)
+        self.assertIn({'type': 'bucket', 'name': 'new-bucket', 'action': 'create_bucket',
+                       'versioning': False}, summary['add'])
+        self.assertIn({'type': 'group', 'name': 'new-group', 'action': 'create_group',
+                       'members': ['new']}, summary['add'])
+        self.assertEqual(summary['delete'], [{'type': 'user', 'name': 'disabled', 'action': 'remove_user'}])
+        self.assertNotIn('secret123', json.dumps(summary))
+        self.assertFalse(any(op['action'] in ['ensure_directory', 'write_policy_file'] for op in plan))
 
     def test_config_scope_has_no_mutations(self):
         self.assertEqual(self.plan(tags=['config']), [])
