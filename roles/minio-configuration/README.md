@@ -1,6 +1,6 @@
 # Роль `minio-configuration`
 
-Версия роли: **3.6.0**.
+Версия роли: **3.8.0**.
 
 ## Режимы запуска — кратко
 
@@ -272,14 +272,22 @@ minio_configuration_users:
 
 Роль создаёт **отдельную политику для каждого правила**:
 
-- `minio-configuration-user-<имя пользователя>-<Sid>`;
-- `minio-configuration-grp-<имя группы>-<Sid>`.
+- `policy-user-<имя пользователя>-<Sid>`;
+- `policy-grp-<имя группы>-<Sid>`.
 
 Например, правило `ReadReports` у пользователя `alice` создаёт
-`minio-configuration-user-alice-ReadReports`, а у группы `alice` —
-`minio-configuration-grp-alice-ReadReports`. Одинаковые правила разных владельцев
+`policy-user-alice-ReadReports`, а у группы `alice` —
+`policy-grp-alice-ReadReports`. Одинаковые правила разных владельцев
 не объединяются. Политика группы назначается только этой группе, а участники
 получают её права через членство.
+
+Файл документа политики на delegate-хосте называется `<имя политики>.json`
+и находится в `minio_configuration_policy_dir`. Например:
+`/etc/minio/policies/policy-user-alice-ReadReports.json`.
+Это же имя файла используется при загрузке документа в MinIO.
+Имя файла вместе с `.json` должно укладываться в 255 байт UTF-8;
+разделители пути `/`, `\` и управляющие символы в имени не допускаются.
+Права файла — `0600`.
 
 Прямые назначения синхронизируются с текущим списком `statements`.
 `statements: []` или отсутствие поля снимает все прямые политики владельца.

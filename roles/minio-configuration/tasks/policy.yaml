@@ -3,7 +3,7 @@
 - name: policy.yaml - render one policy document per owner rule
   ansible.builtin.template:
     src: policy.json.j2
-    dest: "{{ minio_configuration_policy_dir }}/{{ item.name | hash('sha256') }}.json"
+    dest: "{{ minio_configuration_policy_dir }}/{{ item.name }}.json"
     owner: root
     group: root
     mode: '0600'
@@ -15,7 +15,7 @@
 
 - name: policy.yaml - create or update exclusive rule policies
   ansible.builtin.command:
-    argv: ["{{ minio_configuration_mc_binary_path }}", admin, policy, create, "{{ minio_configuration_alias }}", "{{ item.name }}", "{{ minio_configuration_policy_dir }}/{{ item.name | hash('sha256') }}.json"]
+    argv: ["{{ minio_configuration_mc_binary_path }}", admin, policy, create, "{{ minio_configuration_alias }}", "{{ item.name }}", "{{ minio_configuration_policy_dir }}/{{ item.name }}.json"]
   loop: "{{ minio_configuration_rule_policies | default([]) }}"
   loop_control:
     label: "{{ item.name }}"

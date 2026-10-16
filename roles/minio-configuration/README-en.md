@@ -1,6 +1,6 @@
 # minio-configuration
 
-Role version: **3.6.0**.
+Role version: **3.8.0**.
 
 ## Run modes at a glance
 
@@ -138,12 +138,19 @@ Each user/group rule requires a non-empty alphanumeric Sid. Duplicate Sid within
 one owner is rejected before changing MinIO; different owners may reuse the same Sid.
 Comparison is case-sensitive. Each rule gets its own exclusively owned policy:
 
-- `minio-configuration-user-<username>-<Sid>`;
-- `minio-configuration-grp-<groupname>-<Sid>`.
+- `policy-user-<username>-<Sid>`;
+- `policy-grp-<groupname>-<Sid>`.
 
 A user and group named alice with Sid ReadReports get distinct names. Identical
 rules across owners are never merged. A group policy is attached only to that group;
 its members inherit the permissions through membership.
+
+Policy documents on the delegate host use `<policy-name>.json` in
+`minio_configuration_policy_dir`, for example:
+`/etc/minio/policies/policy-user-alice-ReadReports.json`.
+The same filename is passed to MinIO when loading the document.
+The filename including `.json` must fit within 255 UTF-8 bytes and must not contain
+path separators (`/`, `\`) or control characters. File permissions are `0600`.
 
 Direct attachments exactly match statements. Empty/omitted statements remove all
 direct policies. Changing a Sid detaches its old policy and creates a new one;

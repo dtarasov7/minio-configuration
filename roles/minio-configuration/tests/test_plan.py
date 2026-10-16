@@ -136,7 +136,7 @@ class PlanTests(unittest.TestCase):
         console = POLICIES.plan_console(summary)
         self.assertNotIn('document', json.dumps(console))
         self.assertIn('create_policy', json.dumps(console))
-        self.assertIn('minio-configuration-user-new-ReadObjects', json.dumps(console))
+        self.assertIn('policy-user-new-ReadObjects', json.dumps(console))
         self.assertEqual(json.dumps(summary), original)
         self.assertIn('document', original)
 

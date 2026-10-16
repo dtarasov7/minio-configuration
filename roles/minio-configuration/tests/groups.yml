@@ -69,7 +69,7 @@
       ansible.builtin.assert:
         that:
           - state_after_update.groups.readers.members == ['reader']
-          - state_after_update.groups.readers.policies == ['minio-configuration-grp-readers-ReadReports']
+          - state_after_update.groups.readers.policies == ['policy-grp-readers-ReadReports']
           - state_after_update.groups.keep.members == ['reader']
           - state_after_update.groups.old.members == ['unmanaged']
           - state_after_update.groups.unused.members == []

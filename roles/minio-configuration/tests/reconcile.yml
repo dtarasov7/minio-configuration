@@ -54,5 +54,5 @@
           - commands | length == 6
           - "['admin', 'policy', 'detach', 'production', 'old-policy', '--user', 'reader'] in commands"
           - "['admin', 'policy', 'detach', 'production', 'read', '--user', 'reader'] in commands"
-          - "['admin', 'policy', 'attach', 'production', 'minio-configuration-user-reader-NoCreateBucket', '--user', 'reader'] in commands"
-          - "['admin', 'policy', 'attach', 'production', 'minio-configuration-user-reader2-NoCreateBucket', '--user', 'reader2'] in commands"
+          - "['admin', 'policy', 'attach', 'production', 'policy-user-reader-NoCreateBucket', '--user', 'reader'] in commands"
+          - "['admin', 'policy', 'attach', 'production', 'policy-user-reader2-NoCreateBucket', '--user', 'reader2'] in commands"

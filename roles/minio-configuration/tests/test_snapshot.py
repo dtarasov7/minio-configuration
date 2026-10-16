@@ -161,8 +161,8 @@ class PolicyIdentityTests(unittest.TestCase):
         definitions = POLICIES.policy_definitions(users, groups)
         names = [definition['name'] for definition in definitions]
         self.assertEqual(len(set(names)), 6)
-        self.assertIn('minio-configuration-user-alice-ReadObjects', names)
-        self.assertIn('minio-configuration-grp-alice-ReadObjects', names)
+        self.assertIn('policy-user-alice-ReadObjects', names)
+        self.assertIn('policy-grp-alice-ReadObjects', names)
 
     def test_duplicate_sid_within_owner_is_rejected(self):
         with self.assertRaisesRegex(Exception, 'Duplicate Sid'):
@@ -175,6 +175,24 @@ class PolicyIdentityTests(unittest.TestCase):
             statement = dict(READ['Statement'][0], Sid=sid)
             with self.assertRaisesRegex(Exception, 'Sid'):
                 POLICIES.policy_definitions([{'name': 'alice', 'statements': [statement]}], [])
+
+    def test_policy_filename_rejects_path_separators_and_control_characters(self):
+        for owner in ['../alice', 'team/alice', 'team\\alice', 'alice\x00', 'alice\n']:
+            with self.subTest(owner=owner):
+                with self.assertRaisesRegex(Exception, 'Policy filename'):
+                    POLICIES.policy_name('user', owner, 'Read')
+
+    def test_policy_filename_length_is_checked_in_utf8_bytes(self):
+        overhead = len('policy-user--Read.json'.encode('utf-8'))
+        maximum_owner_bytes = 255 - overhead
+        name = POLICIES.policy_name('user', 'a' * maximum_owner_bytes, 'Read')
+        self.assertEqual(len((name + '.json').encode('utf-8')), 255)
+        for owner in ['a' * (maximum_owner_bytes + 1), 'я' * maximum_owner_bytes]:
+            with self.subTest(owner=owner):
+                with self.assertRaisesRegex(Exception, '255 UTF-8 bytes'):
+                    POLICIES.policy_name('user', owner, 'Read')
+        self.assertEqual(POLICIES.policy_name('user', 'имя', 'Read'),
+                         'policy-user-имя-Read')
 
     def test_empty_rules_create_no_policy(self):
         self.assertEqual(POLICIES.policy_definitions([{'name': 'alice', 'statements': []}], []), [])

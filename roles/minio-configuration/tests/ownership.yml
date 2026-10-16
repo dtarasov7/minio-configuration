@@ -7,10 +7,10 @@
     minio_configuration_alias: production
     state_path: "{{ playbook_dir }}/../../../.ansible/guard-state.json"
     minio_configuration_rule_policies:
-      - name: minio-configuration-user-alice-Read
+      - name: policy-user-alice-Read
         kind: user
         owner: alice
-      - name: minio-configuration-grp-alice-Read
+      - name: policy-grp-alice-Read
         kind: grp
         owner: alice
   tasks:
@@ -24,8 +24,8 @@
     - name: Initialize policies exclusively assigned to their owners
       ansible.builtin.copy:
         content: >-
-          {{ {'minio-configuration-user-alice-Read': [{'kind': 'user', 'name': 'alice'}],
-              'minio-configuration-grp-alice-Read': [{'kind': 'grp', 'name': 'alice'}]} | to_json }}
+          {{ {'policy-user-alice-Read': [{'kind': 'user', 'name': 'alice'}],
+              'policy-grp-alice-Read': [{'kind': 'grp', 'name': 'alice'}]} | to_json }}
         dest: "{{ state_path }}"
         mode: '0600'
 
@@ -37,10 +37,10 @@
     - name: Simulate a foreign assignment created outside the role
       ansible.builtin.copy:
         content: >-
-          {{ {'minio-configuration-user-alice-Read': [{'kind': 'user', 'name': 'alice'},
+          {{ {'policy-user-alice-Read': [{'kind': 'user', 'name': 'alice'},
                                                      {'kind': 'user', 'name': 'external'},
                                                      {'kind': 'grp', 'name': 'external'}],
-              'minio-configuration-grp-alice-Read': [{'kind': 'grp', 'name': 'alice'}]} | to_json }}
+              'policy-grp-alice-Read': [{'kind': 'grp', 'name': 'alice'}]} | to_json }}
         dest: "{{ state_path }}"
         mode: '0600'
 

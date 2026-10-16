@@ -11,7 +11,13 @@ def policy_name(kind, owner, sid):
         raise AnsibleFilterError('Policy owner kind must be user or grp')
     if not isinstance(sid, str) or not re.fullmatch(r'[A-Za-z0-9]+', sid):
         raise AnsibleFilterError('Each user/group rule requires a non-empty alphanumeric Sid')
-    return 'minio-configuration-{}-{}-{}'.format(kind, owner, sid)
+    name = 'policy-{}-{}-{}'.format(kind, owner, sid)
+    filename = name + '.json'
+    if '/' in filename or '\\' in filename or re.search(r'[\x00-\x1f\x7f]', filename):
+        raise AnsibleFilterError('Policy filename must not contain path separators or control characters')
+    if len(filename.encode('utf-8')) > 255:
+        raise AnsibleFilterError('Policy filename including .json must not exceed 255 UTF-8 bytes')
+    return name
 
 
 def policy_definitions(users, groups):

@@ -1,5 +1,17 @@
 # Changes
 
+## 3.8.0 — 2026-10-16
+
+- Generated IAM policies use the `policy-` prefix: `policy-user-<name>-<Sid>` and `policy-grp-<name>-<Sid>`.
+- JSON filenames match policy names, for example `policy-user-alice-ReadReports.json`.
+- Updated both READMEs and checks for name generation, filename length, assignments, groups, dry summaries and exclusive policy ownership.
+
+## 3.7.0 — 2026-10-16
+
+- IAM policy documents use `<policy-name>.json` in `minio_configuration_policy_dir` instead of SHA-256 filenames; policy loading uses the same path.
+- Added filename validation: no path separators or control characters, and at most 255 UTF-8 bytes including `.json`.
+- Updated both READMEs and filename tests, including length limits and Unicode.
+
 ## 3.6.0 — 2026-10-16
 
 - Successful assertions use `quiet: true`; loop labels show short entity names and Sids rather than entire mappings.
