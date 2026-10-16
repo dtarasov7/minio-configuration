@@ -11,11 +11,11 @@
     minio_configuration_export_path: "{{ playbook_dir }}/../../../.ansible/exported-inventory.yml"
   tasks:
 
-    - name: Require explicit export selection for this test
+    - name: Require export mode for this test
       tags: always
       ansible.builtin.assert:
         that:
-          - "'export' in ansible_run_tags"
+          - minio_configuration_mode | default('apply') == 'export'
 
     - name: Ensure local test artifact directory exists
       tags: always
@@ -62,7 +62,7 @@
             exported_yaml is search('(?m)^\s+Resource: \[[^\n]*\]$')
           - exported.minio_configuration_backets[0].keys() | list == ['name', 'anonymous', 'versioning']
           - exported.minio_configuration_backets[1].keys() | list == ['name', 'anonymous_policy', 'versioning']
-          - minio_configuration_effective_mode == 'export'
+          - minio_configuration_mode == 'export'
           - minio_configuration_existing_users_raw is not defined or minio_configuration_existing_users_raw is skipped
           - minio_configuration_existing_buckets_raw is not defined or minio_configuration_existing_buckets_raw is skipped
           - minio_configuration_policy_assignments is not defined or minio_configuration_policy_assignments is skipped

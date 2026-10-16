@@ -30,24 +30,8 @@
         argv: [/usr/local/bin/mc, alias, set, production, 'http://localhost:9000', minioadmin, minioadmin123]
       no_log: true
       run_once: true
-- name: Preview configuration without applying it
-  hosts: localhost
-  gather_facts: false
-  become: false
-  tasks:
+- ansible.builtin.import_playbook: dryrun.yml
 
-    - name: converge.yml - run dryrun using the public CLI tag
-      ansible.builtin.command:
-        argv:
-          - "{{ ansible_playbook_python }}"
-          - -m
-          - ansible.cli.playbook
-          - -i
-          - "{{ lookup('env', 'MOLECULE_INVENTORY_FILE') }}"
-          - "{{ playbook_dir }}/dryrun.yml"
-          - --tags
-          - dryrun
-      changed_when: false
 - name: Converge initial MinIO configuration
   hosts: minio_cluster
   become: false
@@ -214,24 +198,8 @@
         Sid: Rule3
   roles:
   - role: minio-configuration
-- name: Export current configuration
-  hosts: localhost
-  gather_facts: false
-  become: false
-  tasks:
+- ansible.builtin.import_playbook: export.yml
 
-    - name: converge.yml - run export using the public CLI tag
-      ansible.builtin.command:
-        argv:
-          - "{{ ansible_playbook_python }}"
-          - -m
-          - ansible.cli.playbook
-          - -i
-          - "{{ lookup('env', 'MOLECULE_INVENTORY_FILE') }}"
-          - "{{ playbook_dir }}/export.yml"
-          - --tags
-          - export
-      changed_when: false
 - name: Apply exported configuration without user passwords
   hosts: minio_cluster
   become: false

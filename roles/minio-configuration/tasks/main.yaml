@@ -13,28 +13,25 @@
 
 - name: main.yaml - preview planned operations
   ansible.builtin.import_tasks: dryrun.yaml
-  when: minio_configuration_effective_mode == 'dryrun'
+  when: minio_configuration_mode == 'dry'
   tags:
     - always
-    - dry
-    - dryrun
 
 - name: main.yaml - export current configuration
   ansible.builtin.import_tasks: export.yaml
-  when: minio_configuration_effective_mode == 'export'
+  when: minio_configuration_mode == 'export'
   tags:
-    - never
-    - export
+    - always
 
 - name: main.yaml - verify exclusive ownership of rule policies
   ansible.builtin.import_tasks: policy-guard.yaml
-  when: minio_configuration_effective_mode == 'apply'
+  when: minio_configuration_mode == 'apply'
   tags:
     - user
 
 - name: main.yaml - prepare policy directory
   ansible.builtin.import_tasks: install.yaml
-  when: minio_configuration_effective_mode == 'apply'
+  when: minio_configuration_mode == 'apply'
   tags:
     - install
     - user
@@ -42,25 +39,25 @@
 
 - name: main.yaml - import backet tasks
   ansible.builtin.import_tasks: backet.yaml
-  when: minio_configuration_effective_mode == "apply"
+  when: minio_configuration_mode == "apply"
   tags:
     - backet
 
 - name: main.yaml - import user tasks
   ansible.builtin.import_tasks: user.yaml
-  when: minio_configuration_effective_mode == "apply"
+  when: minio_configuration_mode == "apply"
   tags:
     - user
 
 - name: main.yaml - import ssl tasks
   ansible.builtin.import_tasks: ssl.yaml
-  when: minio_configuration_effective_mode == 'apply'
+  when: minio_configuration_mode == 'apply'
   tags:
     - ssl
 
 - name: main.yaml - import clean tasks
   ansible.builtin.import_tasks: clean.yaml
-  when: minio_configuration_effective_mode == "apply"
+  when: minio_configuration_mode == "apply"
   tags:
     - never
     - clean

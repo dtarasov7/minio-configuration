@@ -58,3 +58,23 @@
       ansible.builtin.assert:
         that:
           - duplicate_sid_rejected | default(false) | bool
+
+    - name: Reject an invalid operation mode
+      block:
+
+        - name: Run role with an invalid mode
+          ansible.builtin.include_role:
+            name: minio-configuration
+          vars:
+            minio_configuration_mode: invalid
+      rescue:
+
+        - name: Record invalid mode rejection
+          ansible.builtin.set_fact:
+            invalid_mode_rejected: "{{ 'validate operation mode' in ansible_failed_task.name }}"
+
+    - name: Require invalid mode rejection before server access
+      ansible.builtin.assert:
+        that:
+          - invalid_mode_rejected | default(false) | bool
+          - minio_configuration_admin_info is not defined

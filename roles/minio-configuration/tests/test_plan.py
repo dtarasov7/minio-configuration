@@ -16,7 +16,7 @@ class PlanTests(unittest.TestCase):
         groups = groups or []
         rules = POLICIES.policy_definitions(users, groups)
         arguments = dict(users_delete=False, buckets_delete=False,
-                         protected_users=['reader'], policy_dir='/policies', tags=['dryrun'])
+                         protected_users=['reader'], policy_dir='/policies', tags=['all'])
         arguments.update(options)
         return POLICIES.configuration_plan(self.current, self.assignments, users, groups,
                                            buckets or [], rules, **arguments)
@@ -94,15 +94,6 @@ class PlanTests(unittest.TestCase):
 
     def test_config_scope_has_no_mutations(self):
         self.assertEqual(self.plan(tags=['config']), [])
-
-    def test_dry_and_dryrun_select_the_same_full_plan(self):
-        arguments = {'users': [{'name': 'reader'}], 'buckets': [{'name': 'new-bucket'}]}
-        dry_plan = self.plan(tags=['dry'], **arguments)
-        dryrun_plan = self.plan(tags=['dryrun'], **arguments)
-        self.assertEqual(dry_plan, dryrun_plan)
-        self.assertIn({'action': 'ensure_bucket', 'target': 'new-bucket'}, dry_plan)
-        self.assertIn({'action': 'detach_policy', 'target': 'reader', 'kind': 'user', 'policy': 'read'}, dry_plan)
-
 
 if __name__ == '__main__':
     unittest.main()

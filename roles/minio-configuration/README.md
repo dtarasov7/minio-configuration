@@ -1,19 +1,20 @@
 # Роль `minio-configuration`
 
-Версия роли: **3.1.0**.
+Версия роли: **3.2.0**.
 
 ## Режимы запуска — кратко
 
 | Действие | Параметры `ansible-playbook` |
 |---|---|
-| Применить конфигурацию | обычный запуск без тегов |
-| Экспортировать текущую конфигурацию | `--tags export` |
-| Посмотреть план без изменений | `--tags dry` или `--tags dryrun` |
+| Применить конфигурацию | `-e minio_configuration_mode=apply` (по умолчанию) |
+| Экспортировать текущую конфигурацию | `-e minio_configuration_mode=export` |
+| Посмотреть план без изменений | `-e minio_configuration_mode=dry` |
 | Удалить объявленных пользователей и бакеты | `--tags clean` |
 
-Действие выбирается тегами. `export` имеет приоритет
-над `dry`/`dryrun` и исключает применение/очистку. `--check` — независимый штатный
-режим Ansible, который можно добавить к любому действию. Подробности и команды — в разделах ниже.
+Режим задаётся переменной `minio_configuration_mode`: `apply`, `dry` или `export`.
+Её можно определить в inventory (`group_vars`/`host_vars`) либо через `-e` при запуске.
+`--check` — независимый штатный режим Ansible, который можно добавить к любому режиму роли.
+Подробности и команды — в разделах ниже.
 
 Роль выполняет CRUD бакетов и пользователей MinIO в соответствии с описанием в переменных.
 
@@ -46,6 +47,7 @@ Alias должен быть доступен пользователю, от ко
 
 | Переменная | По умолчанию | Описание |
 |---|---|---|
+| `minio_configuration_mode` | `apply` | `apply` — применение, `dry` — план без изменений, `export` — выгрузка |
 | `minio_configuration_nodes_group` | `minio_cluster` | Группа узлов MinIO |
 | `minio_configuration_delegate_host` | первый узел группы | Хост, где выполняются команды `mc` |
 | `minio_configuration_metrics_user` | `minio_prometheus` | Пользователь метрик (защищен от удаления) |
@@ -113,14 +115,12 @@ minio_configuration_users:
 - `user`
 - `backet`
 - `ssl`
-- `dry`, `dryrun` — равнозначные теги просмотра запланированных операций без изменений
-- `export` — экспорт текущей конфигурации (имеет `never`, запускается явно)
 - `clean` (имеет `never`)
 
 Задачи файла `pre-req.yaml` и проверка существующего alias в `config` помечены `always` и выполняются
 при выборе рабочих тегов. `user` и `backet` также создают каталог политик, если нужны файлы политик. Вложенные проверки и задачи согласования получают необходимые теги.
-Если среди выбранных тегов есть `export`, роль выполняет только проверки доступа
-и экспорт: подготовка каталога, применение и очистка пропускаются даже при сочетании с другими тегами.
+Теги выбирают этапы применения и соответствующие части плана в режиме `dry`.
+В режиме `export` выполняются проверки доступа и выгрузка; выбранные теги этапов не включают применение или очистку.
 
 ## Пример inventory
 
@@ -134,6 +134,7 @@ minio_cluster:
   vars:
     ansible_user: ansible
     ansible_become: true
+    minio_configuration_mode: apply
     minio_configuration_alias: production
     minio_configuration_mc_binary_path: /usr/local/bin/mc
     minio_configuration_protected_users: [minio_admin, minio_prometheus]
@@ -154,7 +155,7 @@ minio_cluster:
 
 ## Применение конфигурации
 
-Обычный запуск применяет бакеты, пользователей, группы и политики из inventory.
+При `minio_configuration_mode: apply` роль применяет бакеты, пользователей, группы и политики из inventory.
 Для отдельных частей используйте `--tags user` или `--tags backet`.
 Экспорт и очистка при обычном запуске не выполняются.
 
@@ -164,9 +165,9 @@ ansible-playbook -i inventory.ini roles/minio-configuration/examples/playbook.ym
 
 ## Очистка
 
-Тег `clean` удаляет объявленных пользователей (кроме защищённых), бакеты и созданные
+При `minio_configuration_mode: apply` тег `clean` удаляет объявленных пользователей (кроме защищённых), бакеты и созданные
 файлы политик. Флаги удаления лишних объектов на эту явную очистку не влияют.
-План очистки: `--tags dry,clean`. Штатная проверка Ansible для очистки: `--check --tags clean`.
+План очистки: `-e minio_configuration_mode=dry --tags clean`. Штатная проверка Ansible для очистки: `--check --tags clean`.
 
 
 ```bash
@@ -341,13 +342,13 @@ Alice получает чтение через группу `readers`, Bob уд�
 Роль проверяет доступ через `mc admin info`, читает MinIO и сохраняет YAML на
 **контроллере Ansible**. Alias, endpoint и учётные данные роль не изменяет.
 Даже при включённых флагах удаления бакеты и пользователи не удаляются.
-Экспорт выбирается только тегом `export`; при обычном запуске он не выполняется.
+Для выгрузки задайте `minio_configuration_mode: export` в inventory или через `-e`.
 
 Из корня проекта:
 
 ```bash
 ANSIBLE_ROLES_PATH=roles ansible-playbook -i inventory.ini roles/minio-configuration/examples/playbook.yml \
-  --tags export \
+  -e minio_configuration_mode=export \
   -e minio_configuration_export_path="$PWD/minio-configuration.yml"
 
 ANSIBLE_ROLES_PATH=roles ansible-playbook -i inventory.ini roles/minio-configuration/examples/playbook.yml \
@@ -421,11 +422,11 @@ lookup HashiCorp Vault в переменных, например `secret_key: "{
 ## Dry — просмотр операций
 
 ```bash
-ANSIBLE_ROLES_PATH=roles ansible-playbook -i inventory.ini roles/minio-configuration/examples/playbook.yml --tags dry
-ANSIBLE_ROLES_PATH=roles ansible-playbook -i inventory.ini roles/minio-configuration/examples/playbook.yml --tags dry --check
+ANSIBLE_ROLES_PATH=roles ansible-playbook -i inventory.ini roles/minio-configuration/examples/playbook.yml -e minio_configuration_mode=dry
+ANSIBLE_ROLES_PATH=roles ansible-playbook -i inventory.ini roles/minio-configuration/examples/playbook.yml -e minio_configuration_mode=dry --check
 ```
 
-Теги `dry` и `dryrun` равнозначны. Режим проверяет входные данные и alias, читает текущие бакеты, пользователей, группы,
+При `minio_configuration_mode: dry` роль проверяет входные данные и alias, читает текущие бакеты, пользователей, группы,
 политики и назначения. В `minio_configuration_plan` выводятся операции, объекты,
 документы политик, изменения членства и удаления, разрешённые флагами.
 Пароли заменяются на `[REDACTED]`. Каталоги, файлы политик и экспортный inventory
@@ -434,24 +435,24 @@ ANSIBLE_ROLES_PATH=roles ansible-playbook -i inventory.ini roles/minio-configura
 запись политик, паролей и настройку versioning; это не точный счётчик изменений.
 План отражает момент чтения: параллельные изменения и разрешения на запись могут повлиять на применение.
 
-Для пользователей/групп: `--tags dry,user`. Для бакетов замените `user` на `backet`,
-для очистки — на `clean`. Один тег `dry` или `dryrun` показывает обычный полный запуск
-без очистки. Если выбран `export`, выполняется экспорт.
+Для пользователей/групп: `-e minio_configuration_mode=dry --tags user`. Для бакетов замените `user` на `backet`,
+для очистки — на `clean`. Без тегов режим `dry` показывает полный план без очистки.
+Для явного выбора режима в inventory достаточно записи `minio_configuration_mode: dry`.
 
 ## Штатный check mode Ansible
 
-`--check` не участвует в выборе действия роли. Допустимы все сочетания:
+`--check` не меняет `minio_configuration_mode`. Допустимы все сочетания:
 
 ```bash
 ANSIBLE_ROLES_PATH=roles ansible-playbook -i inventory.ini roles/minio-configuration/examples/playbook.yml --check
-ANSIBLE_ROLES_PATH=roles ansible-playbook -i inventory.ini roles/minio-configuration/examples/playbook.yml --tags dry --check
-ANSIBLE_ROLES_PATH=roles ansible-playbook -i inventory.ini roles/minio-configuration/examples/playbook.yml --tags export --check
+ANSIBLE_ROLES_PATH=roles ansible-playbook -i inventory.ini roles/minio-configuration/examples/playbook.yml -e minio_configuration_mode=dry --check
+ANSIBLE_ROLES_PATH=roles ansible-playbook -i inventory.ini roles/minio-configuration/examples/playbook.yml -e minio_configuration_mode=export --check
 ```
 
 Задачи выбранного действия выполняются согласно поддержке check mode их модулями.
 При обычном прогоне в check mode задачи применения проверяются модулями Ansible,
 а изменяющие команды `mc` пропускаются. Запросы чтения выполняются для проверки доступа
-и получения текущего состояния. Явный план `minio_configuration_plan` выводят только теги `dry`/`dryrun`.
+и получения текущего состояния. Явный план `minio_configuration_plan` выводится в режиме `dry`.
 С `export --check` состояние MinIO читается, а модуль `copy` проверяет запись выгрузки
 без создания или перезаписи файла.
 
@@ -471,11 +472,11 @@ molecule test
 
 ```bash
 python -m unittest discover -s roles/minio-configuration/tests -v
-ANSIBLE_ROLES_PATH=roles ansible-playbook -i roles/minio-configuration/tests/inventory.yml roles/minio-configuration/tests/export.yml --tags export
+ANSIBLE_ROLES_PATH=roles ansible-playbook -i roles/minio-configuration/tests/inventory.yml roles/minio-configuration/tests/export.yml -e minio_configuration_mode=export
 ANSIBLE_ROLES_PATH=roles ansible-playbook -i roles/minio-configuration/tests/inventory.yml roles/minio-configuration/tests/tags.yml --tags user
-ANSIBLE_ROLES_PATH=roles ansible-playbook -i roles/minio-configuration/tests/inventory.yml roles/minio-configuration/tests/dryrun.yml --tags dryrun
+ANSIBLE_ROLES_PATH=roles ansible-playbook -i roles/minio-configuration/tests/inventory.yml roles/minio-configuration/tests/dryrun.yml -e minio_configuration_mode=dry
 ANSIBLE_ROLES_PATH=roles ansible-playbook -i roles/minio-configuration/tests/inventory.yml roles/minio-configuration/tests/check.yml --check
-ANSIBLE_ROLES_PATH=roles ansible-playbook -i roles/minio-configuration/tests/inventory.yml roles/minio-configuration/tests/export-check.yml --tags export --check
+ANSIBLE_ROLES_PATH=roles ansible-playbook -i roles/minio-configuration/tests/inventory.yml roles/minio-configuration/tests/export-check.yml -e minio_configuration_mode=export --check
 ANSIBLE_ROLES_PATH=roles ansible-playbook -i roles/minio-configuration/tests/inventory.yml roles/minio-configuration/tests/prerequisites.yml
 ANSIBLE_ROLES_PATH=roles ansible-playbook -i roles/minio-configuration/tests/inventory.yml roles/minio-configuration/tests/groups.yml
 ANSIBLE_ROLES_PATH=roles ansible-playbook -i roles/minio-configuration/tests/inventory.yml roles/minio-configuration/tests/ownership.yml

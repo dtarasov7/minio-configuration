@@ -11,11 +11,11 @@
     minio_configuration_backets_delete: true
   pre_tasks:
 
-    - name: Require explicit export selection and check mode
+    - name: Require export mode and check mode
       ansible.builtin.assert:
         that:
           - ansible_check_mode
-          - "'export' in ansible_run_tags"
+          - minio_configuration_mode | default('apply') == 'export'
       tags: always
   roles:
     - minio-configuration
@@ -30,7 +30,7 @@
     - name: Verify snapshot was read and copy honored native check mode
       ansible.builtin.assert:
         that:
-          - minio_configuration_effective_mode == 'export'
+          - minio_configuration_mode == 'export'
           - minio_configuration_plan is not defined
           - minio_configuration_snapshot_result.configuration.minio_configuration_users | length == 2
           - not export_check_file.stat.exists

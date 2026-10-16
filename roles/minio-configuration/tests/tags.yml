@@ -20,7 +20,7 @@
     - name: Verify connection setup and nested reconciliation ran
       ansible.builtin.assert:
         that:
-          - minio_configuration_effective_mode == 'apply'
+          - minio_configuration_mode == 'apply'
           - minio_configuration_plan is not defined
           - minio_configuration_admin_info is succeeded
           - minio_configuration_user_info is succeeded
@@ -28,5 +28,5 @@
           - minio_configuration_current_policies == []
           - minio_configuration_current_user_groups == []
           - minio_configuration_existing_buckets_raw is not defined or minio_configuration_existing_buckets_raw is succeeded
-          - minio_configuration_snapshot_result is not defined
+          - minio_configuration_snapshot_result is not defined or minio_configuration_snapshot_result is skipped
       tags: always

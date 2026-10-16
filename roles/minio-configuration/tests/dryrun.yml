@@ -27,10 +27,10 @@
         anonymous: none
   pre_tasks:
 
-    - name: Require explicit dryrun selection for this test
+    - name: Require dry mode for this test
       ansible.builtin.assert:
         that:
-          - "ansible_run_tags | intersect(['dry', 'dryrun']) | length > 0"
+          - minio_configuration_mode == 'dry'
       tags: always
   roles:
     - minio-configuration
@@ -45,7 +45,7 @@
     - name: Verify planned operations and absence of side effects
       ansible.builtin.assert:
         that:
-          - minio_configuration_effective_mode == 'dryrun'
+          - minio_configuration_mode == 'dry'
           - minio_configuration_admin_info is succeeded
           - not dryrun_directory.stat.exists
           - "'dryrun-secret-never-print' not in (minio_configuration_plan | to_json)"

@@ -51,7 +51,7 @@
     - name: Verify apply selection and absence of writes or a dry plan
       ansible.builtin.assert:
         that:
-          - minio_configuration_effective_mode == 'apply'
+          - minio_configuration_mode == 'apply'
           - minio_configuration_plan is not defined
           - minio_configuration_existing_users_raw is not skipped
           - minio_configuration_existing_buckets_raw is not skipped
