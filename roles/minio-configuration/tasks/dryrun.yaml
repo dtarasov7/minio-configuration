@@ -32,9 +32,13 @@
 - name: dryrun.yaml - show planned operations without secrets
   ansible.builtin.debug:
     msg:
-      'Планируем добавить': '{{ minio_configuration_plan.add }}'
-      'Планируем изменить': '{{ minio_configuration_plan.change }}'
-      'Планируем удалить': '{{ minio_configuration_plan.delete }}'
+      'Планируем добавить': '{{ minio_configuration_console_plan.add }}'
+      'Планируем изменить': '{{ minio_configuration_console_plan.change }}'
+      'Планируем удалить': '{{ minio_configuration_console_plan.delete }}'
+  vars:
+    minio_configuration_console_plan: >-
+      {{ minio_configuration_plan if ansible_verbosity | int > 0
+         else minio_configuration_plan | minio_configuration_plan_console }}
   when: minio_configuration_plan.add | length + minio_configuration_plan.change | length + minio_configuration_plan.delete | length > 0
   run_once: true
 

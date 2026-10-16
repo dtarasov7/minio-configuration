@@ -12,6 +12,7 @@
 
 - name: policy-guard.yaml - prevent updating a rule policy assigned to another owner
   ansible.builtin.assert:
+    quiet: true
     that:
       - "minio_configuration_policy_assignments.assignments.get(item.name, []) | difference([{'kind': item.kind, 'name': item.owner}]) | length == 0"
     fail_msg: "Policy {{ item.name }} is assigned to another owner; remove the conflicting assignment before updating it."

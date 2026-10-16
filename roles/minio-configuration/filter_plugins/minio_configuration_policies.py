@@ -182,9 +182,19 @@ def plan_summary(operations):
     return summary
 
 
+def plan_console(summary):
+    """Keep the console summary compact without changing the complete YAML report."""
+    return {
+        category: [{key: value for key, value in entry.items() if key != 'document'}
+                   for entry in entries]
+        for category, entries in summary.items()
+    }
+
+
 class FilterModule:
     def filters(self):
         return {'minio_configuration_policy_definitions': policy_definitions,
                 'minio_configuration_policy_names': policy_names,
                 'minio_configuration_plan': configuration_plan,
-                'minio_configuration_plan_summary': plan_summary}
+                'minio_configuration_plan_summary': plan_summary,
+                'minio_configuration_plan_console': plan_console}

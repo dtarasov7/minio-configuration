@@ -35,6 +35,7 @@
 
 - name: group.yaml - require at least one member to create a new group with mc
   ansible.builtin.assert:
+    quiet: true
     that:
       - minio_configuration_group.name in minio_configuration_existing_groups or minio_configuration_desired_group_members | length > 0
     fail_msg: 'mc cannot create an empty group. Assign at least one user through user.groups.'

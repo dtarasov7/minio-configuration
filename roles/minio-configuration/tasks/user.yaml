@@ -25,10 +25,13 @@
 
 - name: user.yaml - require a password for new users
   ansible.builtin.assert:
+    quiet: true
     that:
       - item.secret_key is defined or item.name in minio_configuration_existing_users
     fail_msg: 'New user requires secret_key; exported inventories do not contain passwords.'
   loop: "{{ minio_configuration_effective_users }}"
+  loop_control:
+    label: "{{ item.name | default('unnamed user') }}"
   no_log: "{{ minio_configuration_no_log }}"
   run_once: true
 

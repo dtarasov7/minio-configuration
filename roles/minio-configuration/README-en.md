@@ -1,6 +1,6 @@
 # minio-configuration
 
-Role version: **3.5.0**.
+Role version: **3.6.0**.
 
 ## Run modes at a glance
 
@@ -52,6 +52,29 @@ accounts to `minio_configuration_protected_users` when deletion is enabled.
 | `minio_configuration_policy_dir` | `/etc/minio/policies` | Policy files on delegate host |
 | `minio_configuration_groups` | `[]` | Groups: `name`, optional `members`, `statements`, `status` |
 | `minio_configuration_hashi_vault_path_password` | `''` | Optional path used in variable-level HashiCorp Vault lookups |
+
+## Ansible output
+
+Without `-v`, successful role assertions use `quiet: true`, and loop labels show
+bucket/user/group names and statement Sids rather than complete definitions.
+Inactive stages are not loaded; failed validations still stop the role. The TLS
+informational message requires `-v`.
+
+The dry summary is printed without `-v`; full policy documents appear on screen
+with `-v` and are always included in the controller-side YAML report.
+The Ansible stdout callback controls ordinary `TASK`, `ok`, `changed` and `skipping`
+lines. To hide skips with the default callback, set this in your `ansible.cfg`:
+
+```ini
+[defaults]
+display_skipped_hosts = false
+```
+
+The role does not change callback settings for the whole playbook.
+`display_ok_hosts = false` hides successful results, including the dry summary's
+`debug` output; saving the report is unaffected.
+See the [default callback options](https://docs.ansible.com/projects/ansible/latest/collections/ansible/builtin/default_callback.html).
+`no_log` protects secrets rather than controlling normal output volume.
 
 ## Anonymous access
 
@@ -281,7 +304,8 @@ ANSIBLE_ROLES_PATH=roles ansible-playbook -i inventory.yml roles/minio-configura
 With `minio_configuration_mode: dry`, the role reads cluster state and prints three
 lists: **“Планируем добавить”** (planned additions), **“Планируем изменить”**
 (planned updates), and **“Планируем удалить”** (planned removals). Entries contain
-an object type, name, action and parameters. The same summary is available as
+an object type, name, action and parameters; full policy documents require `-v`
+for console output. The same summary is available as
 `minio_configuration_plan`, with `add`, `change` and `delete` keys. An empty plan
 prints “Изменения в кластере не требуются” (no cluster changes required).
 

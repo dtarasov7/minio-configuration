@@ -12,45 +12,75 @@
     - config
 
 - name: main.yaml - preview planned operations
-  ansible.builtin.import_tasks: dryrun.yaml
+  ansible.builtin.include_tasks:
+    file: dryrun.yaml
+    apply:
+      tags:
+        - always
   when: minio_configuration_mode == 'dry'
   tags:
     - always
 
 - name: main.yaml - export current configuration
-  ansible.builtin.import_tasks: export.yaml
+  ansible.builtin.include_tasks:
+    file: export.yaml
+    apply:
+      tags:
+        - always
   when: minio_configuration_mode == 'export'
   tags:
     - always
 
 - name: main.yaml - verify exclusive ownership of rule policies
-  ansible.builtin.import_tasks: policy-guard.yaml
+  ansible.builtin.include_tasks:
+    file: policy-guard.yaml
+    apply:
+      tags:
+        - user
   when: minio_configuration_mode == 'apply'
   tags:
     - user
 
 - name: main.yaml - prepare policy directory
-  ansible.builtin.import_tasks: install.yaml
+  ansible.builtin.include_tasks:
+    file: install.yaml
+    apply:
+      tags:
+        - install
+        - user
+        - backet
   when: minio_configuration_mode == 'apply'
   tags:
     - install
     - user
     - backet
 
-- name: main.yaml - import backet tasks
-  ansible.builtin.import_tasks: backet.yaml
+- name: main.yaml - include backet tasks
+  ansible.builtin.include_tasks:
+    file: backet.yaml
+    apply:
+      tags:
+        - backet
   when: minio_configuration_mode == "apply"
   tags:
     - backet
 
-- name: main.yaml - import user tasks
-  ansible.builtin.import_tasks: user.yaml
+- name: main.yaml - include user tasks
+  ansible.builtin.include_tasks:
+    file: user.yaml
+    apply:
+      tags:
+        - user
   when: minio_configuration_mode == "apply"
   tags:
     - user
 
-- name: main.yaml - import ssl tasks
-  ansible.builtin.import_tasks: ssl.yaml
+- name: main.yaml - include ssl tasks
+  ansible.builtin.include_tasks:
+    file: ssl.yaml
+    apply:
+      tags:
+        - ssl
   when: minio_configuration_mode == 'apply'
   tags:
     - ssl

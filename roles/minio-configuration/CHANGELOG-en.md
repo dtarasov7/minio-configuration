@@ -1,5 +1,13 @@
 # Changes
 
+## 3.6.0 — 2026-10-16
+
+- Successful assertions use `quiet: true`; loop labels show short entity names and Sids rather than entire mappings.
+- Operational stages are included dynamically only for the selected mode, reducing skipped-task output while preserving stage tags.
+- Without `-v`, the dry console summary omits full policy documents; complete details remain in the YAML report and appear on screen with `-v`.
+- The TLS informational message requires `-v`; secret protection and validation failures remain enforced.
+- Documented output controls through the standard Ansible callback and updated local tests.
+
 ## 3.5.0 — 2026-10-16
 
 - Dry prints a summary of cluster additions, updates and removals; reads and local directory/file preparation are excluded from the plan.

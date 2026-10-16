@@ -2,6 +2,7 @@
 
 - name: validate-policy.yaml - validate IAM document
   ansible.builtin.assert:
+    quiet: true
     that:
       - minio_configuration_document is mapping
       - minio_configuration_document.Version | default('') == '2012-10-17'
@@ -13,6 +14,7 @@
 
 - name: validate-policy.yaml - validate IAM statements
   ansible.builtin.assert:
+    quiet: true
     that:
       - item is mapping
       - item.Effect | default('') in ['Allow', 'Deny']
@@ -22,19 +24,25 @@
       - item.Resource | default(item.NotResource | default([])) | length > 0
     fail_msg: 'Each statement requires Effect, Action (or NotAction), Resource (or NotResource).'
   loop: "{{ minio_configuration_document.Statement }}"
+  loop_control:
+    label: "{{ item.Sid | default('unnamed statement') }}"
 
 - name: validate-policy.yaml - require unique Sid values for owner rules
   ansible.builtin.assert:
+    quiet: true
     that:
       - item.Sid is defined
       - item.Sid is string
       - item.Sid is match('^[A-Za-z0-9]+$')
     fail_msg: 'Each user/group rule requires a non-empty Sid containing only letters and digits.'
   loop: "{{ minio_configuration_document.Statement }}"
+  loop_control:
+    label: "{{ item.Sid | default('unnamed statement') }}"
   when: minio_configuration_require_sid | default(false) | bool
 
 - name: validate-policy.yaml - reject duplicate Sid within one owner
   ansible.builtin.assert:
+    quiet: true
     that:
       - minio_configuration_document.Statement | map(attribute='Sid') | list | length == minio_configuration_document.Statement | map(attribute='Sid') | unique(case_sensitive=true) | list | length
     fail_msg: 'Duplicate Sid in the rules of this user or group.'

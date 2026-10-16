@@ -129,6 +129,17 @@ class PlanTests(unittest.TestCase):
         self.assertNotIn('secret123', json.dumps(summary))
         self.assertFalse(any(op['action'] in ['ensure_directory', 'write_policy_file'] for op in plan))
 
+    def test_console_omits_documents_without_changing_the_saved_plan(self):
+        user = {'name': 'new', 'secret_key': 'secret123', 'statements': READ['Statement']}
+        summary = POLICIES.plan_summary(self.plan(users=[user]))
+        original = json.dumps(summary)
+        console = POLICIES.plan_console(summary)
+        self.assertNotIn('document', json.dumps(console))
+        self.assertIn('create_policy', json.dumps(console))
+        self.assertIn('minio-configuration-user-new-ReadObjects', json.dumps(console))
+        self.assertEqual(json.dumps(summary), original)
+        self.assertIn('document', original)
+
     def test_config_scope_has_no_mutations(self):
         self.assertEqual(self.plan(tags=['config']), [])
 

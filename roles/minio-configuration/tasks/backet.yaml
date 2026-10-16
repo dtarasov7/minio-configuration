@@ -26,6 +26,8 @@
   ansible.builtin.command:
     argv: ["{{ minio_configuration_mc_binary_path }}", anonymous, set, "{{ item.anonymous }}", "{{ minio_configuration_alias }}/{{ item.name }}"]
   loop: "{{ minio_configuration_effective_backets }}"
+  loop_control:
+    label: '{{ item.name }}'
   when: item.anonymous is defined
   run_once: true
   delegate_to: "{{ minio_configuration_delegate_host }}"
@@ -38,6 +40,8 @@
     group: root
     mode: '0600'
   loop: "{{ minio_configuration_effective_backets }}"
+  loop_control:
+    label: '{{ item.name }}'
   when: item.anonymous_policy is defined
   run_once: true
   delegate_to: "{{ minio_configuration_delegate_host }}"
@@ -46,6 +50,8 @@
   ansible.builtin.command:
     argv: ["{{ minio_configuration_mc_binary_path }}", anonymous, set-json, "{{ minio_configuration_policy_dir }}/anonymous-{{ item.name }}.json", "{{ minio_configuration_alias }}/{{ item.name }}"]
   loop: "{{ minio_configuration_effective_backets }}"
+  loop_control:
+    label: '{{ item.name }}'
   when: item.anonymous_policy is defined
   run_once: true
   delegate_to: "{{ minio_configuration_delegate_host }}"
