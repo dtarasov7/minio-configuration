@@ -1,4 +1,5 @@
 ---
+
 - name: install.yaml - create policy directory
   ansible.builtin.file:
     path: "{{ minio_configuration_policy_dir }}"

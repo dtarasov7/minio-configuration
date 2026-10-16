@@ -120,7 +120,7 @@ class Snapshot:
             target = self.alias + '/' + name
             anonymous = self.one('anonymous', 'get-json', target)
             version = self.one('version', 'info', target)
-            bucket = {'name': name, 'versioning': version['versioning']['status'] == 'Enabled'}
+            bucket = {'name': name}
             document = anonymous.get('anonymous')
             if document and document.get('Statement'):
                 bucket['anonymous_policy'] = document
@@ -128,6 +128,7 @@ class Snapshot:
                 bucket['anonymous'] = 'none'
             else:
                 raise ValueError('Missing anonymous policy for bucket ' + name)
+            bucket['versioning'] = version['versioning']['status'] == 'Enabled'
             buckets.append(bucket)
 
         user_records = self.read('admin', 'user', 'list', self.alias)
@@ -167,8 +168,7 @@ class Snapshot:
                 'minio_configuration_groups': groups,
                 'minio_configuration_exported_policies': documents,
                 'minio_configuration_backets_delete': False,
-                'minio_configuration_users_delete': False,
-                'minio_configuration_mode': 'apply'}
+                'minio_configuration_users_delete': False}
 
     def collect_assignments(self):
         assignments = {}

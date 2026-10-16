@@ -1,4 +1,5 @@
 ---
+
 - name: policy-guard.yaml - collect current direct policy owners
   minio_configuration_snapshot:
     binary: "{{ minio_configuration_mc_binary_path }}"

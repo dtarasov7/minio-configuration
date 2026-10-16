@@ -1,4 +1,5 @@
 ---
+
 - name: clean.yaml - remove managed users except protected
   ansible.builtin.command:
     argv:
@@ -15,6 +16,7 @@
   failed_when: false
   run_once: true
   delegate_to: '{{ minio_configuration_delegate_host }}'
+
 - name: clean.yaml - remove managed buckets
   ansible.builtin.command:
     cmd: '{{ minio_configuration_mc_binary_path }} rb --force {{ minio_configuration_alias }}/{{ item.name }}'
@@ -24,6 +26,7 @@
   failed_when: false
   run_once: true
   delegate_to: '{{ minio_configuration_delegate_host }}'
+
 - name: clean.yaml - remove generated anonymous policy files
   ansible.builtin.file:
     path: '{{ minio_configuration_policy_dir }}/anonymous-{{ item.name }}.json'
@@ -31,6 +34,7 @@
   loop: '{{ minio_configuration_backets }}'
   run_once: true
   delegate_to: '{{ minio_configuration_delegate_host }}'
+
 - name: clean.yaml - remove generated rule policy files
   ansible.builtin.file:
     path: '{{ minio_configuration_policy_dir }}/{{ item.name | hash(''sha256'') }}.json'
@@ -40,5 +44,6 @@
     label: '{{ item.name }}'
   run_once: true
   delegate_to: '{{ minio_configuration_delegate_host }}'
+
 - name: clean.yaml - finish play after cleanup
   ansible.builtin.meta: end_play

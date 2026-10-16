@@ -49,8 +49,6 @@ minio_configuration_protected_users:
   - minioadmin
   - "{{ minio_configuration_metrics_user }}"
 
-# apply changes MinIO; export reads inventory; dryrun prints planned operations.
-minio_configuration_mode: apply
 minio_configuration_export_path: "{{ playbook_dir }}/minio-inventory.yml"
 minio_configuration_no_log: true
 minio_configuration_groups: []

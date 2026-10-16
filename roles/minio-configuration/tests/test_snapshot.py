@@ -67,6 +67,7 @@ class SnapshotTests(unittest.TestCase):
         self.assertEqual(result['minio_configuration_groups'][0]['statements'], READ['Statement'])
         self.assertEqual(result['minio_configuration_exported_policies'],
                          {'read': READ, 'deny': READ, 'unused': ANONYMOUS})
+        self.assertNotIn('minio_configuration_mode', result)
         self.assertNotIn('minio_configuration_policies', result)
         self.assertNotIn('secret_key', json.dumps(result))
         for command in module.calls:
@@ -92,6 +93,7 @@ class SnapshotTests(unittest.TestCase):
         self.assertEqual(result['minio_configuration_exported_policies'], {})
         self.assertEqual(result['minio_configuration_users'], [])
         self.assertEqual(result['minio_configuration_backets'], [])
+        self.assertNotIn('minio_configuration_mode', result)
         self.assertNotIn('minio_configuration_policies', result)
 
     def test_missing_policy_must_not_be_exported_as_private(self):

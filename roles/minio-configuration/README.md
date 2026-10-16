@@ -1,6 +1,18 @@
 # Роль `minio-configuration`
 
-Версия роли: **2.0.0**.
+Версия роли: **3.1.0**.
+
+## Режимы запуска — кратко
+
+| Действие | Параметры `ansible-playbook` |
+|---|---|
+| Применить конфигурацию | обычный запуск без тегов |
+| Экспортировать текущую конфигурацию | `--tags export` |
+| Посмотреть план без изменений | `--tags dryrun` или `--check` |
+| Удалить объявленных пользователей и бакеты | `--tags clean` |
+
+Выбор действий задаётся тегами; переменная режима не нужна. `export` имеет приоритет
+над `dryrun` и исключает применение/очистку. Подробности и команды — в разделах ниже.
 
 Роль выполняет CRUD бакетов и пользователей MinIO в соответствии с описанием в переменных.
 
@@ -12,11 +24,11 @@
 - создает/изменяет пользователей из `minio_configuration_users`;
 - назначает явные IAM-правила пользователям и группам, создаёт отдельную политику для каждого правила владельца;
 - управляет анонимным доступом к бакетам и объектам;
-- экспортирует текущие бакеты, политики, пользователей и группы в inventory YAML;
+- экспортирует текущие бакеты, политики, пользователей и группы в YAML-файл переменных для inventory;
 - удаляет лишних пользователей только если включен флаг удаления;
 - защищает администратора и пользователя метрик от автоматического удаления.
 
-## Требования и переход с 1.x
+## Требования и переход с предыдущих версий
 
 До запуска роли установите `mc` (или `mcli`) и настройте административный alias на
 `minio_configuration_delegate_host`. В `minio_configuration_mc_binary_path` укажите
@@ -35,6 +47,11 @@ URL/checksum загрузки клиента и проверки сертифи�
 inventory; необходимые настройки выполняйте вне роли. Поле `secret_key` прикладных
 пользователей сохранено.
 
+В версии 3.0.0 удалена `minio_configuration_mode`. Удалите её из inventory,
+extra vars и ранее экспортированных файлов. Для экспорта используйте `--tags export`,
+для просмотра — `--tags dryrun` или `--check`. При наличии старой переменной роль
+останавливается с пояснением; обычный запуск применяет конфигурацию.
+
 ## Переменные роли
 
 | Переменная | По умолчанию | Описание |
@@ -48,8 +65,7 @@ inventory; необходимые настройки выполняйте вне
 | `minio_configuration_users_delete` | `false` | Разрешить удаление лишних пользователей |
 | `minio_configuration_backets` | см. ниже | Desired-state бакетов |
 | `minio_configuration_users` | см. ниже | Desired-state пользователей |
-| `minio_configuration_mode` | `apply` | `apply` — применение, `export` — экспорт, `dryrun` — план без изменений |
-| `minio_configuration_export_path` | `{{ playbook_dir }}/minio-inventory.yml` | Файл inventory на контроллере; родительский каталог должен существовать |
+| `minio_configuration_export_path` | `{{ playbook_dir }}/minio-inventory.yml` | YAML-файл переменных на контроллере; родительский каталог должен существовать |
 | `minio_configuration_policy_dir` | `/etc/minio/policies` | Каталог файлов политик на delegate-хосте |
 | `minio_configuration_no_log` | `true` | Скрывать задачи с паролями |
 | `minio_configuration_groups` | `[]` | Группы: `name`, необязательные `members`, `statements`, `status` (`enabled`/`disabled`) |
@@ -102,17 +118,16 @@ minio_configuration_users:
 
 ## Теги
 
-- `pre-req`
 - `install` — подготовка каталога политик; установка пакетов и скачивание `mc` не выполняются
 - `config`
 - `user`
 - `backet`
 - `ssl`
 - `dryrun` — просмотр запланированных операций без изменений
-- `export` — экспорт текущей конфигурации; автоматически выбирает режим `export`
+- `export` — экспорт текущей конфигурации (имеет `never`, запускается явно)
 - `clean` (имеет `never`)
 
-Проверки `pre-req` и существующего alias в `config` помечены `always` и выполняются
+Задачи файла `pre-req.yaml` и проверка существующего alias в `config` помечены `always` и выполняются
 при выборе рабочих тегов. `user` и `backet` также создают каталог политик, если нужны файлы политик. Вложенные проверки и задачи согласования получают необходимые теги.
 Если среди выбранных тегов есть `export`, роль выполняет только проверки доступа
 и экспорт: подготовка каталога, применение и очистка пропускаются даже при сочетании с другими тегами.
@@ -147,13 +162,22 @@ minio_cluster:
         Sid: Rule1
 ```
 
-## Пример запуска
+## Применение конфигурации
+
+Обычный запуск применяет бакеты, пользователей, группы и политики из inventory.
+Для отдельных частей используйте `--tags user` или `--tags backet`.
+Экспорт и очистка при обычном запуске не выполняются.
 
 ```bash
 ansible-playbook -i inventory.ini roles/minio-configuration/examples/playbook.yml
 ```
 
 ## Очистка
+
+Тег `clean` удаляет объявленных пользователей (кроме защищённых), бакеты и созданные
+файлы политик. Флаги удаления лишних объектов на эту явную очистку не влияют.
+Просмотр очистки без изменений: `--tags dryrun,clean` или `--check --tags clean`.
+
 
 ```bash
 ansible-playbook -i inventory.ini roles/minio-configuration/examples/playbook.yml --tags clean
@@ -327,32 +351,66 @@ Alice получает чтение через группу `readers`, Bob уд�
 Роль проверяет доступ через `mc admin info`, читает MinIO и сохраняет YAML на
 **контроллере Ansible**. Alias, endpoint и учётные данные роль не изменяет.
 Даже при включённых флагах удаления бакеты и пользователи не удаляются.
-Вместо `--tags export` по-прежнему можно задать `-e minio_configuration_mode=export`.
+Экспорт выбирается только тегом `export`; при обычном запуске он не выполняется.
 
 Из корня проекта:
 
 ```bash
 ANSIBLE_ROLES_PATH=roles ansible-playbook -i inventory.ini roles/minio-configuration/examples/playbook.yml \
   --tags export \
-  -e minio_configuration_export_path="$PWD/minio-inventory.yml"
+  -e minio_configuration_export_path="$PWD/minio-configuration.yml"
 
-ANSIBLE_ROLES_PATH=roles ansible-playbook -i minio-inventory.yml roles/minio-configuration/examples/playbook.yml
+ANSIBLE_ROLES_PATH=roles ansible-playbook -i inventory.ini roles/minio-configuration/examples/playbook.yml \
+  -e @minio-configuration.yml
 ```
 
-Административные учётные данные и endpoint в inventory не записываются.
-Список защищённых пользователей также сохраняется в inventory.
-Экспорт включает все бакеты и их анонимные политики,
-обычных внутренних пользователей, группы и статусы. Документы текущих прямых политик
-разворачиваются в `statements` каждого владельца; ссылки на общие политики не сохраняются.
-Все исходные IAM-политики, включая неназначенные, дополнительно сохраняются в
-`minio_configuration_exported_policies` как словарь «имя: документ». Это справочный
-снимок; режим `apply` его не применяет. Членство экспортируется в `users[].groups`. При последующем применении создаются
-отдельные политики владельцев без изменения прав остальных пользователей,
-которые могли использовать исходные общие политики.
+Выгрузка содержит только три переменные верхнего уровня в следующем порядке:
+`minio_configuration_users`, `minio_configuration_groups`, `minio_configuration_backets`.
+Это файл переменных для `group_vars`, `vars_files` или `-e @файл.yml`; его также можно
+перенести в секцию `vars` inventory. Обёртка `all/children/hosts`, параметры подключения,
+alias, флаги удаления и отдельный список политик в файл не включаются.
+
+Поля сущностей сохраняют порядок: `name` всегда идёт первым. У бакетов далее следуют
+`anonymous` либо `anonymous_policy`, затем `versioning`. Например:
+
+```yaml
+minio_configuration_users: []
+minio_configuration_groups: []
+minio_configuration_backets:
+- name: private-bucket
+  anonymous: none
+  versioning: false
+```
+
+Во всей выгрузке отключена алфавитная сортировка ключей. У пользователей и групп
+`name` также идёт первым, остальные поля сохраняют порядок формирования. Документ
+анонимной политики начинается с `Version`, затем `Statement`. В правилах порядок такой:
+`Sid`, `Effect`, `Principal`/`NotPrincipal`, `Action`/`NotAction`,
+`Resource`/`NotResource`, `Condition`; отсутствующие поля пропускаются.
+Дополнительные поля и вложенные условия сохраняются без потери данных.
+
+Списки `Action`, `NotAction`, `Resource` и `NotResource` выводятся компактно в одну строку.
+Списки сущностей и правил остаются многострочными. Кавычки добавляются автоматически
+по правилам YAML; значения и типы не меняются. Например:
+
+```yaml
+statements:
+- Sid: ReadObjects
+  Effect: Allow
+  Action: ['s3:GetObject', 's3:ListBucket']
+  Resource: ['arn:aws:s3:::xxx', 'arn:aws:s3:::xxx/*']
+```
+
+Экспорт включает все бакеты и их анонимные политики, обычных внутренних пользователей,
+группы, статусы и членство пользователей в группах. Документы назначенных прямых
+политик разворачиваются в `statements` каждого владельца; ссылки на общие политики
+и неназначенные политики отдельно не выгружаются. При последующем применении создаются
+отдельные политики владельцев без изменения исходных общих политик.
 Стандартные анонимные режимы экспортируются как точные документы политики;
-закрытый бакет — как `anonymous: none`. Права файла — `0600`, режим в inventory —
-`apply`, флаги удаления — `false`. Ошибка чтения прерывает экспорт; файл не заменяется
-частичным результатом. Повторный запуск экспорта заменяет файл целиком.
+закрытый бакет — как `anonymous: none`. Права файла — `0600`.
+Параметры подключения и удаления задаются отдельно в inventory.
+Ошибка чтения прерывает экспорт; файл не заменяется частичным результатом.
+Повторный запуск экспорта заменяет файл целиком.
 
 При экспорте корректный уникальный `Sid` сохраняется. Если он отсутствует,
 содержит недопустимые символы или повторяется между прямыми политиками одного владельца,
@@ -374,7 +432,6 @@ lookup HashiCorp Vault в переменных, например `secret_key: "{
 
 ```bash
 ANSIBLE_ROLES_PATH=roles ansible-playbook -i inventory.ini roles/minio-configuration/examples/playbook.yml --tags dryrun
-ANSIBLE_ROLES_PATH=roles ansible-playbook -i inventory.ini roles/minio-configuration/examples/playbook.yml -e minio_configuration_mode=dryrun
 ANSIBLE_ROLES_PATH=roles ansible-playbook -i inventory.ini roles/minio-configuration/examples/playbook.yml --check
 ```
 
@@ -387,8 +444,7 @@ ANSIBLE_ROLES_PATH=roles ansible-playbook -i inventory.ini roles/minio-configura
 запись политик, паролей и настройку versioning; это не точный счётчик изменений.
 План отражает момент чтения: параллельные изменения и разрешения на запись могут повлиять на применение.
 
-Для пользователей/групп: `-e minio_configuration_mode=dryrun --tags user` либо
-`--tags dryrun,user`. Для бакетов замените `user` на `backet`, для очистки — на `clean`.
+Для пользователей/групп: `--tags dryrun,user` или `--check --tags user`. Для бакетов замените `user` на `backet`, для очистки — на `clean`.
 Один тег `dryrun` показывает обычный полный запуск без очистки.
 Если одновременно выбраны `export` и `dryrun`, приоритет имеет `export`.
 Стандартный `--check` включает просмотр применения/очистки; экспорт с `--check`
@@ -410,7 +466,6 @@ molecule test
 
 ```bash
 python -m unittest discover -s roles/minio-configuration/tests -v
-ANSIBLE_ROLES_PATH=roles ansible-playbook -i roles/minio-configuration/tests/inventory.yml roles/minio-configuration/tests/export.yml
 ANSIBLE_ROLES_PATH=roles ansible-playbook -i roles/minio-configuration/tests/inventory.yml roles/minio-configuration/tests/export.yml --tags export
 ANSIBLE_ROLES_PATH=roles ansible-playbook -i roles/minio-configuration/tests/inventory.yml roles/minio-configuration/tests/tags.yml --tags user
 ANSIBLE_ROLES_PATH=roles ansible-playbook -i roles/minio-configuration/tests/inventory.yml roles/minio-configuration/tests/dryrun.yml --tags dryrun

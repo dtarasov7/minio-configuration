@@ -1,4 +1,5 @@
 ---
+
 - name: policy.yaml - render one policy document per owner rule
   ansible.builtin.template:
     src: policy.json.j2

@@ -1,12 +1,19 @@
 ---
+
+- name: pre-req.yaml - reject removed mode variable
+  ansible.builtin.assert:
+    that:
+      - minio_configuration_mode is not defined
+    fail_msg: >-
+      minio_configuration_mode was removed. Remove it from inventory and extra vars;
+      use --tags export, --tags dryrun or --check. A normal run applies configuration.
+  run_once: true
+
 - name: pre-req.yaml - resolve operation mode from requested tags
   ansible.builtin.set_fact:
     minio_configuration_effective_mode: >-
       {{ 'export' if 'export' in ansible_run_tags else
-         ('dryrun' if ('dryrun' in ansible_run_tags or
-                       (ansible_check_mode and minio_configuration_mode == 'apply')) else minio_configuration_mode) }}
-  tags:
-    - always
+         ('dryrun' if ('dryrun' in ansible_run_tags or ansible_check_mode) else 'apply') }}
   run_once: true
 
 - name: pre-req.yaml - verify supported operating system
@@ -15,8 +22,7 @@
     - ansible_os_family in ['RedHat', 'CentOS', 'Astra Linux', 'RED', 'REDOS', 'redos', 'Altlinux', 'ALT Server']
     fail_msg: OS {{ ansible_os_family }} is not supported
     success_msg: OS family is {{ ansible_os_family }}
-  tags:
-  - always
+
 - name: pre-req.yaml - verify MinIO nodes group exists
   ansible.builtin.assert:
     that:
@@ -24,6 +30,7 @@
     - groups[minio_configuration_nodes_group] | length > 0
     fail_msg: Group {{ minio_configuration_nodes_group }} is not found or empty.
   run_once: true
+
 - name: pre-req.yaml - build effective bucket and user configuration
   ansible.builtin.set_fact:
     minio_configuration_effective_backets: "{{ minio_configuration_backets if minio_configuration_effective_mode in ['apply', 'dryrun'] else [] }}"
@@ -32,6 +39,7 @@
     minio_configuration_effective_users_delete: '{{ minio_configuration_users_delete | bool }}'
   no_log: '{{ minio_configuration_no_log }}'
   run_once: true
+
 - name: pre-req.yaml - validate bucket definitions
   ansible.builtin.assert:
     that:
@@ -48,11 +56,7 @@
   loop: '{{ minio_configuration_effective_backets }}'
   when: minio_configuration_effective_mode in ['apply', 'dryrun']
   run_once: true
-- name: pre-req.yaml - validate operation mode
-  ansible.builtin.assert:
-    that:
-    - minio_configuration_mode in ['apply', 'export', 'dryrun']
-  run_once: true
+
 - name: pre-req.yaml - validate user definitions
   ansible.builtin.assert:
     that:
@@ -70,6 +74,7 @@
   no_log: '{{ minio_configuration_no_log }}'
   when: minio_configuration_effective_mode in ['apply', 'dryrun']
   run_once: true
+
 - name: pre-req.yaml - validate anonymous configuration
   ansible.builtin.assert:
     that:
@@ -80,6 +85,7 @@
   loop: '{{ minio_configuration_effective_backets }}'
   when: minio_configuration_effective_mode in ['apply', 'dryrun']
   run_once: true
+
 - name: pre-req.yaml - validate user statements
   ansible.builtin.include_tasks:
     file: validate-policy.yaml
@@ -100,6 +106,7 @@
   - minio_configuration_statement_user.statements is defined
   no_log: '{{ minio_configuration_no_log }}'
   run_once: true
+
 - name: pre-req.yaml - validate anonymous policies
   ansible.builtin.include_tasks:
     file: validate-policy.yaml
@@ -115,6 +122,7 @@
   - minio_configuration_effective_mode in ['apply', 'dryrun']
   - minio_configuration_anonymous_bucket.anonymous_policy is defined
   run_once: true
+
 - name: pre-req.yaml - validate groups
   ansible.builtin.assert:
     that:
@@ -126,12 +134,14 @@
   loop: "{{ minio_configuration_groups if minio_configuration_effective_mode in ['apply', 'dryrun'] else [] }}"
   when: minio_configuration_effective_mode in ['apply', 'dryrun']
   run_once: true
+
 - name: pre-req.yaml - validate mc alias
   ansible.builtin.assert:
     that:
     - minio_configuration_alias is match('^[A-Za-z][A-Za-z0-9_-]*$')
     fail_msg: mc alias must start with a letter and contain only letters, digits, underscores or hyphens.
   run_once: true
+
 - name: pre-req.yaml - reject group members conflicting with user memberships
   ansible.builtin.include_tasks:
     file: validate-group.yaml
@@ -144,6 +154,7 @@
     label: '{{ minio_configuration_validation_group.name }}'
   when: minio_configuration_effective_mode in ['apply', 'dryrun']
   run_once: true
+
 - name: pre-req.yaml - validate group statements
   ansible.builtin.include_tasks:
     file: validate-policy.yaml
@@ -164,6 +175,7 @@
   - minio_configuration_effective_mode in ['apply', 'dryrun']
   - minio_configuration_statement_group.statements is defined
   run_once: true
+
 - name: pre-req.yaml - require unique user and group names
   ansible.builtin.assert:
     that:

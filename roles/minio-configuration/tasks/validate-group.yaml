@@ -1,4 +1,5 @@
 ---
+
 - name: validate-group.yaml - ensure managed users agree with explicit group members
   ansible.builtin.assert:
     that:

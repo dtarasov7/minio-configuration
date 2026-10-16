@@ -13,11 +13,13 @@
           Action: ['s3:CreateBucket']
           Resource: ['arn:aws:s3:::*']
   tasks:
+
     - name: Ensure local test artifact directory exists
       ansible.builtin.file:
         path: "{{ playbook_dir }}/../../../.ansible"
         state: directory
         mode: '0700'
+
     - name: Clear fixture command log
       ansible.builtin.copy:
         content: ''

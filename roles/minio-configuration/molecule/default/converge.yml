@@ -17,30 +17,37 @@
   hosts: minio_cluster
   become: false
   tasks:
+
     - name: converge.yml - install mc as a scenario prerequisite
       ansible.builtin.get_url:
         url: https://dl.min.io/client/mc/release/linux-amd64/mc
         dest: /usr/local/bin/mc
         mode: '0755'
       run_once: true
+
     - name: converge.yml - configure the existing administrative alias
       ansible.builtin.command:
         argv: [/usr/local/bin/mc, alias, set, production, 'http://localhost:9000', minioadmin, minioadmin123]
       no_log: true
       run_once: true
 - name: Preview configuration without applying it
-  hosts: minio_cluster
+  hosts: localhost
+  gather_facts: false
   become: false
-  vars:
-    minio_configuration_alias: production
-    minio_configuration_mode: dryrun
-    minio_configuration_backets:
-      - name: b-dryrun-only
-    minio_configuration_users:
-      - name: u_dryrun_only
-        secret_key: dryrun_not_created_123
-  roles:
-    - minio-configuration
+  tasks:
+
+    - name: converge.yml - run dryrun using the public CLI tag
+      ansible.builtin.command:
+        argv:
+          - "{{ ansible_playbook_python }}"
+          - -m
+          - ansible.cli.playbook
+          - -i
+          - "{{ lookup('env', 'MOLECULE_INVENTORY_FILE') }}"
+          - "{{ playbook_dir }}/dryrun.yml"
+          - --tags
+          - dryrun
+      changed_when: false
 - name: Converge initial MinIO configuration
   hosts: minio_cluster
   become: false
@@ -208,29 +215,34 @@
   roles:
   - role: minio-configuration
 - name: Export current configuration
+  hosts: localhost
+  gather_facts: false
+  become: false
+  tasks:
+
+    - name: converge.yml - run export using the public CLI tag
+      ansible.builtin.command:
+        argv:
+          - "{{ ansible_playbook_python }}"
+          - -m
+          - ansible.cli.playbook
+          - -i
+          - "{{ lookup('env', 'MOLECULE_INVENTORY_FILE') }}"
+          - "{{ playbook_dir }}/export.yml"
+          - --tags
+          - export
+      changed_when: false
+- name: Apply exported configuration without user passwords
   hosts: minio_cluster
   become: false
   vars:
     minio_configuration_alias: production
-    minio_configuration_mode: export
-    minio_configuration_backets_delete: true
-    minio_configuration_users_delete: true
-    minio_configuration_export_path: '{{ lookup(''env'', ''MOLECULE_EPHEMERAL_DIRECTORY'') }}/minio-inventory.yml'
-  roles:
-  - role: minio-configuration
-- name: Apply exported configuration without user passwords
-  hosts: minio_cluster
-  become: false
   tasks:
-  - name: converge.yml - load exported inventory variables
+
+  - name: converge.yml - load exported configuration variables
     ansible.builtin.include_vars:
-      file: '{{ lookup(''env'', ''MOLECULE_EPHEMERAL_DIRECTORY'') }}/minio-inventory.yml'
-      name: minio_configuration_exported_inventory
-  - name: converge.yml - use exported desired state
-    ansible.builtin.set_fact:
-      '{{ item.key }}': '{{ item.value }}'
-    loop: '{{ minio_configuration_exported_inventory.all.children.minio_cluster.vars | dict2items }}'
-    no_log: true
+      file: "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/minio-inventory.yml"
+
   - name: converge.yml - apply exported desired state
     ansible.builtin.include_role:
       name: minio-configuration

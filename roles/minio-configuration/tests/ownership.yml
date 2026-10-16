@@ -14,6 +14,7 @@
         kind: grp
         owner: alice
   tasks:
+
     - name: Ensure test artifact directory exists
       ansible.builtin.file:
         path: "{{ playbook_dir }}/../../../.ansible"
@@ -45,11 +46,13 @@
 
     - name: Reject foreign ownership
       block:
+
         - name: Check conflicting assignments
           ansible.builtin.include_role:
             name: minio-configuration
             tasks_from: policy-guard.yaml
       rescue:
+
         - name: Record expected ownership rejection
           ansible.builtin.set_fact:
             ownership_rejected: "{{ 'prevent updating a rule policy assigned to another owner' in ansible_failed_task.name }}"

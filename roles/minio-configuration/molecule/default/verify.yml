@@ -7,6 +7,7 @@
     minio_configuration_alias: production
     ansible_python_interpreter: /usr/bin/python3
   tasks:
+
     - name: verify.yaml - verify existing admin alias
       ansible.builtin.command: >-
         /usr/local/bin/mc admin info {{ minio_configuration_alias }}

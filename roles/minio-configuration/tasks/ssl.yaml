@@ -1,4 +1,5 @@
 ---
+
 - name: ssl.yaml - ssl configuration is not required for this role
   ansible.builtin.debug:
     msg: "Роль minio-configuration работает через MinIO API и не управляет сертификатами."

@@ -1,8 +1,8 @@
 ---
+
 - name: main.yaml - import pre-req tasks
   ansible.builtin.import_tasks: pre-req.yaml
   tags:
-    - pre-req
     - always
 
 - name: main.yaml - verify existing client and alias
@@ -22,6 +22,7 @@
   ansible.builtin.import_tasks: export.yaml
   when: minio_configuration_effective_mode == 'export'
   tags:
+    - never
     - export
 
 - name: main.yaml - verify exclusive ownership of rule policies

@@ -1,10 +1,15 @@
 ---
-- name: Validate exported inventory as role input
+- name: Validate exported configuration variables as role input
   hosts: minio_cluster
   gather_facts: false
   vars:
     ansible_os_family: RedHat
   tasks:
+
+    - name: Load exported configuration variables
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../../../.ansible/exported-inventory.yml"
+
     - name: Run preflight tasks against exported inventory
       ansible.builtin.include_role:
         name: minio-configuration

@@ -1,4 +1,5 @@
 ---
+
 - name: user-policy.yaml - read current direct policies
   ansible.builtin.command:
     argv: ["{{ minio_configuration_mc_binary_path }}", --json, admin, user, info, "{{ minio_configuration_alias }}", "{{ minio_configuration_policy_user.name }}"]

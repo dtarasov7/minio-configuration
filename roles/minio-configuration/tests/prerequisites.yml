@@ -4,10 +4,11 @@
   gather_facts: false
   vars:
     ansible_os_family: RedHat
-    minio_configuration_mode: dryrun
   tasks:
+
     - name: Reject an unavailable alias before planning or changing anything
       block:
+
         - name: Execute role with unavailable alias
           ansible.builtin.include_role:
             name: minio-configuration
@@ -15,20 +16,25 @@
             minio_configuration_mc_binary_path: "{{ playbook_dir }}/fake_mc.py"
             minio_configuration_alias: missing
       rescue:
+
         - name: Record alias failure
           ansible.builtin.set_fact:
             alias_rejected: "{{ 'verify existing mc alias' in ansible_failed_task.name }}"
+
     - name: Reject a missing binary before planning or changing anything
       block:
+
         - name: Execute role with missing client
           ansible.builtin.include_role:
             name: minio-configuration
           vars:
             minio_configuration_mc_binary_path: "{{ playbook_dir }}/missing-mc"
       rescue:
+
         - name: Record binary failure
           ansible.builtin.set_fact:
             binary_rejected: "{{ 'verify existing mc alias' in ansible_failed_task.name }}"
+
     - name: Assert both prerequisite failures stop the role
       ansible.builtin.assert:
         that:

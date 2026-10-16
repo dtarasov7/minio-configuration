@@ -4,7 +4,6 @@
   gather_facts: false
   vars:
     ansible_os_family: RedHat
-    minio_configuration_mode: dryrun
     minio_configuration_mc_binary_path: "{{ playbook_dir }}/fake_mc.py"
     minio_configuration_alias: production
     minio_configuration_policy_dir: "{{ playbook_dir }}/../../../.ansible/dryrun-no-directory"
@@ -26,14 +25,23 @@
       - name: new-bucket
         versioning: true
         anonymous: none
+  pre_tasks:
+
+    - name: Require explicit dryrun selection for this test
+      ansible.builtin.assert:
+        that:
+          - "'dryrun' in ansible_run_tags or ansible_check_mode"
+      tags: always
   roles:
     - minio-configuration
   tasks:
+
     - name: Verify dryrun did not create the policy directory
       ansible.builtin.stat:
         path: "{{ minio_configuration_policy_dir }}"
       register: dryrun_directory
       tags: always
+
     - name: Verify planned operations and absence of side effects
       ansible.builtin.assert:
         that:

@@ -6,8 +6,10 @@
     ansible_os_family: RedHat
     minio_configuration_no_log: false
   tasks:
+
     - name: Try unsupported user description
       block:
+
         - name: Run role preflight with unsupported fields
           ansible.builtin.include_role:
             name: minio-configuration
@@ -18,6 +20,7 @@
                 access: READONLY
                 buckets: [b-default]
       rescue:
+
         - name: Record validation rejection
           ansible.builtin.set_fact:
             unsupported_fields_rejected: "{{ 'validate user definitions' in ansible_failed_task.name }}"
@@ -29,6 +32,7 @@
 
     - name: Try duplicate Sid in one user description
       block:
+
         - name: Run role preflight with duplicate Sid
           ansible.builtin.include_role:
             name: minio-configuration
@@ -46,6 +50,7 @@
                     Action: ['s3:CreateBucket']
                     Resource: ['arn:aws:s3:::*']
       rescue:
+
         - name: Record duplicate Sid rejection
           ansible.builtin.set_fact:
             duplicate_sid_rejected: "{{ 'reject duplicate Sid within one owner' in ansible_failed_task.name }}"
@@ -54,3 +59,23 @@
       ansible.builtin.assert:
         that:
           - duplicate_sid_rejected | default(false) | bool
+
+    - name: Reject the removed public mode variable
+      block:
+
+        - name: Run role with a legacy export mode variable
+          ansible.builtin.include_role:
+            name: minio-configuration
+          vars:
+            minio_configuration_mode: export
+      rescue:
+
+        - name: Record legacy mode rejection
+          ansible.builtin.set_fact:
+            legacy_mode_rejected: "{{ 'reject removed mode variable' in ansible_failed_task.name }}"
+
+    - name: Require legacy mode rejection before any server access
+      ansible.builtin.assert:
+        that:
+          - legacy_mode_rejected | default(false) | bool
+          - minio_configuration_admin_info is not defined

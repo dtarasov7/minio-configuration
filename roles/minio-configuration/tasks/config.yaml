@@ -1,4 +1,5 @@
 ---
+
 - name: config.yaml - verify existing mc alias and MinIO admin API access
   ansible.builtin.command:
     argv:

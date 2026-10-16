@@ -1,4 +1,5 @@
 ---
+
 - name: export.yaml - collect current buckets and IAM configuration
   minio_configuration_snapshot:
     binary: "{{ minio_configuration_mc_binary_path }}"
@@ -7,32 +8,14 @@
   run_once: true
   delegate_to: "{{ minio_configuration_delegate_host }}"
 
-- name: export.yaml - initialize exported host mapping
-  ansible.builtin.set_fact:
-    minio_configuration_export_hosts: {}
-  run_once: true
-
-- name: export.yaml - preserve host connection settings
-  ansible.builtin.set_fact:
-    minio_configuration_export_hosts: >-
-      {{ minio_configuration_export_hosts | combine({item: hostvars[item] | dict2items
-         | selectattr('key', 'in', ['ansible_host', 'ansible_port', 'ansible_user', 'ansible_connection',
-                                  'ansible_become', 'ansible_python_interpreter']) | items2dict}) }}
-  loop: "{{ groups[minio_configuration_nodes_group] }}"
-  run_once: true
-
-- name: export.yaml - write reusable inventory on the controller
+- name: export.yaml - write exported configuration variables on the controller
   ansible.builtin.copy:
     content: >-
-      {{ {'all': {'children': {minio_configuration_nodes_group: {
-           'hosts': minio_configuration_export_hosts,
-           'vars': minio_configuration_snapshot_result.configuration | combine({
-             'minio_configuration_nodes_group': minio_configuration_nodes_group,
-             'minio_configuration_delegate_host': minio_configuration_delegate_host,
-             'minio_configuration_mc_binary_path': minio_configuration_mc_binary_path,
-             'minio_configuration_protected_users': minio_configuration_protected_users,
-             'minio_configuration_alias': minio_configuration_alias
-           })}}}} | to_nice_yaml(indent=2, width=120) }}
+      {{ {
+           'minio_configuration_users': minio_configuration_snapshot_result.configuration.minio_configuration_users,
+           'minio_configuration_groups': minio_configuration_snapshot_result.configuration.minio_configuration_groups,
+           'minio_configuration_backets': minio_configuration_snapshot_result.configuration.minio_configuration_backets
+         } | minio_configuration_export_yaml }}
     dest: "{{ minio_configuration_export_path }}"
     mode: '0600'
   become: false

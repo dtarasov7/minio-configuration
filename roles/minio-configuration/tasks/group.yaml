@@ -1,4 +1,5 @@
 ---
+
 - name: group.yaml - calculate members from user definitions
   ansible.builtin.set_fact:
     minio_configuration_declared_group_users: []

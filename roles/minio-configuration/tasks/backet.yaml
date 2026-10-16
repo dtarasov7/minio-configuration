@@ -1,4 +1,5 @@
 ---
+
 - name: backet.yaml - ensure declared buckets exist
   ansible.builtin.command:
     cmd: "{{ minio_configuration_mc_binary_path }} mb --ignore-existing {{ minio_configuration_alias }}/{{ item.name }}"

@@ -1,4 +1,5 @@
 ---
+
 - name: dryrun.yaml - read current configuration without modifications
   minio_configuration_snapshot:
     binary: "{{ minio_configuration_mc_binary_path }}"

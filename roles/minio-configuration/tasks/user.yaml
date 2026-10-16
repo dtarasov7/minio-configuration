@@ -1,4 +1,5 @@
 ---
+
 - name: user.yaml - collect existing users
   ansible.builtin.command:
     cmd: "{{ minio_configuration_mc_binary_path }} admin user list {{ minio_configuration_alias }} --json"

@@ -1,0 +1,13 @@
+---
+- name: Preview configuration without applying it
+  hosts: minio_cluster
+  become: false
+  vars:
+    minio_configuration_alias: production
+    minio_configuration_backets:
+      - name: b-dryrun-only
+    minio_configuration_users:
+      - name: u_dryrun_only
+        secret_key: dryrun_not_created_123
+  roles:
+    - minio-configuration

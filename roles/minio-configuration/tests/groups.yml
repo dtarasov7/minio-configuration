@@ -29,6 +29,7 @@
       name: reader
       groups: [keep, readers]
   tasks:
+
     - name: Ensure test artifact directory exists
       ansible.builtin.file:
         path: "{{ playbook_dir }}/../../../.ansible"

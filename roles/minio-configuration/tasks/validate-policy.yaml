@@ -1,4 +1,5 @@
 ---
+
 - name: validate-policy.yaml - validate IAM document
   ansible.builtin.assert:
     that:

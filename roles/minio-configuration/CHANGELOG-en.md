@@ -1,5 +1,20 @@
 # Changes
 
+## 3.1.0 — 2026-10-16
+
+- Added blank lines before every task in the role, examples, local tests and Molecule, including nested block/rescue/always tasks.
+
+## 3.0.0 — 2026-10-16
+
+- Added consistent policy field ordering and inline Action/NotAction and Resource/NotResource lists with correct YAML quoting.
+- Export contains only the users/groups/backets variable lists without inventory wrappers or metadata; each entity starts with name, followed by anonymous/anonymous_policy and versioning for buckets.
+- Removed public `minio_configuration_mode`; actions use tags and preview also supports `--check`.
+- The role rejects the old variable with migration instructions.
+- Prerequisite tasks inherit only `always`; removed the `pre-req` tag and redundant static task tags.
+- Export uses `never`/`export`, requires explicit selection and no longer writes a mode variable to inventory.
+- Both READMEs start with a brief command summary and retain detailed behavior in the relevant sections.
+- Updated local tests and Molecule to select export/dryrun with CLI tags.
+
 ## 2.0.0 — 2026-10-15
 
 - Use an installed `mc` and existing alias; `admin info` checks access and stops on errors.
