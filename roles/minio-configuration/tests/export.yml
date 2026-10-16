@@ -5,40 +5,50 @@
   vars:
     minio_configuration_mc_binary_path: "{{ playbook_dir }}/fake_mc.py"
     ansible_os_family: RedHat
-    minio_configuration_mode: export
+    minio_configuration_mode: "{{ 'apply' if 'export' in ansible_run_tags else 'export' }}"
     minio_configuration_alias: production
     minio_configuration_backets_delete: true
     minio_configuration_users_delete: true
-    minio_configuration_endpoint: http://minio.example.test:9000
     minio_configuration_export_path: "{{ playbook_dir }}/../../../.ansible/exported-inventory.yml"
   tasks:
     - name: Ensure local test artifact directory exists
+      tags: always
       ansible.builtin.file:
         path: "{{ playbook_dir }}/../../../.ansible"
         state: directory
         mode: '0700'
     - name: Execute actual export tasks
+      tags: always
       ansible.builtin.include_role:
         name: minio-configuration
 
     - name: Load exported inventory
+      tags: always
       ansible.builtin.set_fact:
         exported: "{{ lookup('file', minio_configuration_export_path) | from_yaml }}"
-      vars:
-        vault_minio_root_password: test-password
 
     - name: Verify the resulting inventory and file permissions
+      tags: always
       ansible.builtin.stat:
         path: "{{ minio_configuration_export_path }}"
       register: exported_file
 
     - name: Assert exported inventory contents
+      tags: always
       ansible.builtin.assert:
         that:
           - exported_file.stat.mode == '0600'
+          - exported.all.children.minio_cluster.vars.minio_configuration_root_password is not defined
+          - exported.all.children.minio_cluster.vars.minio_configuration_endpoint is not defined
           - exported.all.children.minio_cluster.vars.minio_configuration_alias == 'production'
+          - exported.all.children.minio_cluster.vars.minio_configuration_protected_users == ['minioadmin', 'minio_prometheus']
           - exported.all.children.minio_cluster.vars.minio_configuration_users[1].groups == ['staff']
           - exported.all.children.minio_cluster.vars.minio_configuration_users | length == 2
           - exported.all.children.minio_cluster.vars.minio_configuration_backets | length == 2
           - exported.all.children.minio_cluster.vars.minio_configuration_groups[0].status == 'disabled'
           - exported.all.children.minio_cluster.vars.minio_configuration_mode == 'apply'
+          - exported.all.children.minio_cluster.vars.minio_configuration_exported_policies.keys() | sort == ['deny', 'read', 'unused']
+          - minio_configuration_effective_mode == 'export'
+          - minio_configuration_existing_users_raw is not defined or minio_configuration_existing_users_raw is skipped
+          - minio_configuration_existing_buckets_raw is not defined or minio_configuration_existing_buckets_raw is skipped
+          - minio_configuration_policy_assignments is not defined or minio_configuration_policy_assignments is skipped

@@ -1,0 +1,48 @@
+---
+- name: Test dryrun against a client that rejects every write
+  hosts: minio_cluster
+  gather_facts: false
+  vars:
+    ansible_os_family: RedHat
+    minio_configuration_mode: dryrun
+    minio_configuration_mc_binary_path: "{{ playbook_dir }}/fake_mc.py"
+    minio_configuration_alias: production
+    minio_configuration_policy_dir: "{{ playbook_dir }}/../../../.ansible/dryrun-no-directory"
+    minio_configuration_protected_users: [reader]
+    minio_configuration_users_delete: true
+    minio_configuration_backets_delete: true
+    minio_configuration_users:
+      - name: new-user
+        secret_key: dryrun-secret-never-print
+        groups: [staff]
+        statements:
+          - Sid: Read
+            Effect: Allow
+            Action: ['s3:GetObject']
+            Resource: ['arn:aws:s3:::new-bucket/*']
+    minio_configuration_groups:
+      - name: staff
+    minio_configuration_backets:
+      - name: new-bucket
+        versioning: true
+        anonymous: none
+  roles:
+    - minio-configuration
+  tasks:
+    - name: Verify dryrun did not create the policy directory
+      ansible.builtin.stat:
+        path: "{{ minio_configuration_policy_dir }}"
+      register: dryrun_directory
+      tags: always
+    - name: Verify planned operations and absence of side effects
+      ansible.builtin.assert:
+        that:
+          - minio_configuration_effective_mode == 'dryrun'
+          - minio_configuration_admin_info is succeeded
+          - not dryrun_directory.stat.exists
+          - "'dryrun-secret-never-print' not in (minio_configuration_plan | to_json)"
+          - "({'action': 'create_user', 'target': 'new-user', 'secret_key': '[REDACTED]'} in minio_configuration_plan) == (expected_user_creation | default(true) | bool)"
+          - "({'action': 'ensure_bucket', 'target': 'new-bucket'} in minio_configuration_plan) == (expected_bucket_operation | default(true) | bool)"
+          - "({'action': 'remove_user', 'target': 'disabled'} in minio_configuration_plan) == (expected_user_deletion | default(true) | bool)"
+          - "{'action': 'remove_user', 'target': 'reader'} not in minio_configuration_plan"
+      tags: always

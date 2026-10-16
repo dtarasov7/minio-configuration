@@ -1,0 +1,30 @@
+---
+- name: Verify user tag executes prerequisites and nested tasks
+  hosts: minio_cluster
+  gather_facts: false
+  vars:
+    ansible_os_family: RedHat
+    minio_configuration_mc_binary_path: "{{ playbook_dir }}/fake_mc.py"
+    minio_configuration_policy_dir: "{{ playbook_dir }}/../../../.ansible/test-policies"
+    minio_configuration_alias: production
+    minio_configuration_users:
+      - name: disabled
+        groups: []
+        statements: []
+    minio_configuration_groups: []
+    minio_configuration_backets: []
+  roles:
+    - minio-configuration
+  tasks:
+    - name: Verify connection setup and nested reconciliation ran
+      ansible.builtin.assert:
+        that:
+          - minio_configuration_effective_mode == 'apply'
+          - minio_configuration_admin_info is succeeded
+          - minio_configuration_user_info is succeeded
+          - minio_configuration_user_group_info is succeeded
+          - minio_configuration_current_policies == []
+          - minio_configuration_current_user_groups == []
+          - minio_configuration_existing_buckets_raw is not defined
+          - minio_configuration_snapshot_result is not defined
+      tags: always

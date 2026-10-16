@@ -1,0 +1,34 @@
+---
+- name: dryrun.yaml - read current configuration without modifications
+  minio_configuration_snapshot:
+    binary: "{{ minio_configuration_mc_binary_path }}"
+    alias: "{{ minio_configuration_alias }}"
+  register: minio_configuration_dryrun_snapshot
+  run_once: true
+  delegate_to: "{{ minio_configuration_delegate_host }}"
+
+- name: dryrun.yaml - read current direct policy assignments
+  minio_configuration_snapshot:
+    binary: "{{ minio_configuration_mc_binary_path }}"
+    alias: "{{ minio_configuration_alias }}"
+    operation: assignments
+  register: minio_configuration_dryrun_assignments
+  run_once: true
+  delegate_to: "{{ minio_configuration_delegate_host }}"
+
+- name: dryrun.yaml - calculate planned operations
+  ansible.builtin.set_fact:
+    minio_configuration_plan: >-
+      {{ minio_configuration_dryrun_snapshot.configuration | minio_configuration_plan(
+           minio_configuration_dryrun_assignments.assignments,
+           minio_configuration_effective_users, minio_configuration_groups,
+           minio_configuration_effective_backets, minio_configuration_rule_policies,
+           minio_configuration_effective_users_delete, minio_configuration_effective_backets_delete,
+           minio_configuration_protected_users, minio_configuration_policy_dir, ansible_run_tags, ansible_skip_tags) }}
+  no_log: "{{ minio_configuration_no_log }}"
+  run_once: true
+
+- name: dryrun.yaml - show planned operations without secrets
+  ansible.builtin.debug:
+    var: minio_configuration_plan
+  run_once: true

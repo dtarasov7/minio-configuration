@@ -1,5 +1,20 @@
 # Changes
 
+## 2.0.0 — 2026-10-15
+
+- Use an installed `mc` and existing alias; `admin info` checks access and stops on errors.
+- Removed alias configuration, administrator credentials and connection/client download variables.
+- `minio_configuration_mc_binary_path` specifies the full path including the executable name (`mc` or `mcli`).
+- Added `dryrun`: read current state, print operations without writes, redact passwords, support tags and `--check`.
+- `install` only prepares policy files' directory, also prepared with `user`/`backet` tags when needed.
+- Export no longer includes an endpoint or administrator credentials.
+- Added dryrun and missing alias/binary coverage; updated Molecule prerequisites.
+
+- Fixed prerequisite, connection and nested task tagging.
+- `--tags export` selects export without mutating MinIO objects, including combined tag runs.
+- Export now includes a reference snapshot of all original IAM policies, including unassigned policies.
+- Added integration coverage for the `export` and `user` tags.
+
 ## 1.0.0 — 2026-10-08
 
 - Added anonymous access presets and explicit IAM bucket policies.

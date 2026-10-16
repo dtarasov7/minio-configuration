@@ -1,9 +1,28 @@
 # minio-configuration
 
-Role version: **1.0.0**.
+Role version: **2.0.0**.
 
 Configure MinIO buckets, anonymous access and built-in IAM users through `mc`,
 or export their current configuration as an Ansible YAML inventory.
+
+## Prerequisites and migration from 1.x
+
+Install `mc` (or `mcli`) and configure an authenticated administrative alias on
+`minio_configuration_delegate_host` before invoking the role. Set
+`minio_configuration_mc_binary_path` to the full executable path, including its filename.
+The role runs that executable with `admin info <alias>` and stops on a missing binary,
+unknown alias or access error. It does not install packages, download mc, change aliases,
+or require an administrator password.
+
+The alias must be available to the effective Ansible execution user, including `become`.
+It defines the endpoint, credentials and TLS settings. Configure aliases separately on
+any new delegate/server before reusing an export. Add custom administrative/technical
+accounts to `minio_configuration_protected_users` when deletion is enabled.
+
+Version 2.0.0 removes role variables for endpoint/scheme/port, root credentials,
+mc download URL/checksum and download certificate validation. Remove those settings
+from inventory; configure them outside the role where appropriate. Application user
+`secret_key` values remain supported.
 
 ## Variables
 
@@ -11,23 +30,15 @@ or export their current configuration as an Ansible YAML inventory.
 |---|---|---|
 | `minio_configuration_nodes_group` | `minio_cluster` | Inventory group |
 | `minio_configuration_delegate_host` | First group member | Host running `mc` |
-| `minio_configuration_scheme` | `http` | Endpoint scheme |
-| `minio_configuration_port` | `9000` | API port |
-| `minio_configuration_endpoint` | `''` | Explicit endpoint; otherwise use delegate ansible_host or hostname |
-| `minio_configuration_root_user` | `minioadmin` | Administrator |
-| `minio_configuration_root_password` | `minioadmin_password_change_me` | Administrator password; override before use |
 | `minio_configuration_metrics_user` | `minio_prometheus` | Protected metrics user |
 | `minio_configuration_alias` | `local` | mc alias for every command and export |
-| `minio_configuration_mc_binary_path` | `/usr/local/bin/mc` | Client executable |
-| `minio_configuration_mc_binary_url` | `https://dl.min.io/client/mc/release/linux-amd64/mc` | Download URL |
-| `minio_configuration_mc_binary_checksum` | `''` | Optional download checksum |
-| `minio_configuration_validate_certs` | `false` | Validate TLS when downloading mc |
+| `minio_configuration_mc_binary_path` | `/usr/local/bin/mc` | Full path including the executable name, e.g. `/opt/minio/mcli` |
 | `minio_configuration_backets` | Bucket `b-default`, versioning disabled | Bucket definitions; spelling is intentional for compatibility |
 | `minio_configuration_users` | Explicit read and write IAM statements on `b-default` | See defaults/main.yml; override passwords |
 | `minio_configuration_backets_delete` | `false` | Delete undeclared buckets |
 | `minio_configuration_users_delete` | `false` | Delete undeclared users |
-| `minio_configuration_protected_users` | Root and metrics users | Excluded from automatic deletion |
-| `minio_configuration_mode` | `apply` | `apply` or `export` |
+| `minio_configuration_protected_users` | `[minioadmin, minio_prometheus]` | Excluded from automatic deletion |
+| `minio_configuration_mode` | `apply` | `apply`, `export` or `dryrun` |
 | `minio_configuration_export_path` | `{{ playbook_dir }}/minio-inventory.yml` | Controller output file; parent directory must exist |
 | `minio_configuration_no_log` | `true` | Hide tasks containing passwords |
 | `minio_configuration_policy_dir` | `/etc/minio/policies` | Policy files on delegate host |
@@ -158,8 +169,8 @@ minio_cluster:
     minio1:
       ansible_host: 10.10.10.11
   vars:
-    minio_configuration_endpoint: https://minio.example.org:9000
-    minio_configuration_root_password: '{{ vault_minio_root_password }}'
+    minio_configuration_alias: production
+    minio_configuration_mc_binary_path: /usr/local/bin/mc
 ```
 
 ```yaml
@@ -172,50 +183,77 @@ minio_cluster:
 From the repository root:
 
 ```bash
-ANSIBLE_ROLES_PATH=roles ansible-playbook -i inventory.yml roles/minio-configuration/examples/playbook.yml -e @secrets.yml
-ANSIBLE_ROLES_PATH=roles ansible-playbook -i inventory.yml roles/minio-configuration/examples/playbook.yml -e @secrets.yml \
-  -e minio_configuration_mode=export -e minio_configuration_export_path="$PWD/minio-inventory.yml"
-ANSIBLE_ROLES_PATH=roles ansible-playbook -i minio-inventory.yml roles/minio-configuration/examples/playbook.yml -e @secrets.yml
+ANSIBLE_ROLES_PATH=roles ansible-playbook -i inventory.yml roles/minio-configuration/examples/playbook.yml
+ANSIBLE_ROLES_PATH=roles ansible-playbook -i inventory.yml roles/minio-configuration/examples/playbook.yml \
+  --tags export -e minio_configuration_export_path="$PWD/minio-inventory.yml"
+ANSIBLE_ROLES_PATH=roles ansible-playbook -i minio-inventory.yml roles/minio-configuration/examples/playbook.yml
 ```
 
-Export requires mc already installed on the delegate. It skips package installation
-and server mutations, even when deletion flags are true. It configures the selected
-mc alias, reads the server and writes a mode-0600 inventory on the controller.
+Use `--tags export` to select export mode automatically; `-e minio_configuration_mode=export` remains supported.
+Export uses the installed client and existing alias. It checks `mc admin info`, reads
+the server and writes a mode-0600 inventory on the controller. Server objects remain
+unchanged even when deletion flags are true.
 The inventory contains buckets, exact anonymous policy documents, ordinary built-in
 users, groups and statuses. Current direct policy documents are expanded into each
-owner's statements, without shared policy references. Reapplying the export creates
+owner's statements, without shared policy references. All original IAM policies, including
+unassigned policies, are also saved by name in `minio_configuration_exported_policies`.
+This reference snapshot is ignored by apply mode. Reapplying the export creates
 exclusive policies without modifying the former shared policies used by other entities.
 Valid unique Sids are preserved. Missing, invalid or duplicate Sids receive stable
 Export<sha256> identifiers; the remaining rule content is preserved. Export aborts on read
 errors without replacing the file with partial results. Repeated exports replace
 the file. The resulting inventory uses apply mode and disables deletion.
 
-Passwords cannot be recovered. Define `vault_minio_root_password` in `secrets.yml`
-(prefer Ansible Vault). Existing users keep passwords; migration to a new server
-requires adding their secret_key values and updating connection settings.
+Passwords cannot be recovered. Existing users keep passwords; migration to a new server
+requires adding their secret_key values and preconfiguring the alias for that server.
+The exported inventory contains no administrator credentials or endpoint.
+The protected user list is also preserved in the inventory.
 Root, service accounts, STS credentials and external LDAP/OIDC identities are not
 ordinary users returned by mc admin user list and are not copied. Objects,
 lifecycle rules, quotas, TLS and server configuration are outside this export.
 Only the versioning enabled state is preserved, not MFA/prefix exclusion settings.
 
-Passwords may also use HashiCorp Vault through variables:
+Application user passwords can use inventory variables, Ansible Vault, or variable-level
+HashiCorp Vault lookups, for example `secret_key: "{{ vault_app_secret }}"`.
+`minio_configuration_hashi_vault_path_password` remains available for these lookups.
 
-```yaml
-minio_configuration_hashi_vault_path_password: secret=opensource/project/data/minio
-minio_configuration_root_password: '{{ lookup(''hashi_vault'', minio_configuration_hashi_vault_path_password + '':root'')
-  }}'
+## Dryrun
+
+```bash
+ANSIBLE_ROLES_PATH=roles ansible-playbook -i inventory.yml roles/minio-configuration/examples/playbook.yml --tags dryrun
+ANSIBLE_ROLES_PATH=roles ansible-playbook -i inventory.yml roles/minio-configuration/examples/playbook.yml -e minio_configuration_mode=dryrun
+ANSIBLE_ROLES_PATH=roles ansible-playbook -i inventory.yml roles/minio-configuration/examples/playbook.yml --check
 ```
+
+Dryrun validates input, checks the alias and reads the current buckets, users, groups,
+policies and assignments. It prints `minio_configuration_plan` with operation names,
+targets, policy documents, membership changes and deletions permitted by the flags.
+User passwords appear as `[REDACTED]`. It does not write policy files, create directories,
+export inventory, or run mutating mc commands. Reads against MinIO are performed.
+The plan describes operations the apply tasks would attempt, including repeated
+policy updates, password updates and versioning settings; it is not an exact change count.
+It is a snapshot: concurrent changes and server-side write authorization can affect apply.
+
+Use `-e minio_configuration_mode=dryrun --tags user` or `--tags dryrun,user` for user/group
+operations only; replace `user` with `backet` for buckets or `clean` for cleanup.
+`--tags dryrun` alone previews the normal full run, excluding cleanup.
+The `export` tag takes precedence over `dryrun` when both are selected.
+Standard `--check` previews apply/clean; export in check mode reads the server and previews
+writing the inventory through Ansible's copy module.
 
 ## Tags and tests
 
 Tags: `pre-req`, `install`, `config`, `backet`, `user`, `ssl`, `export`,
-`clean` (never runs by default). The export tag does not select export mode and
-requires configured connection facts; prefer the full command above.
+`dryrun`, `clean` (never runs by default). Preflight and existing alias checks use
+`always` and run with each operational tag. `install` only prepares the policy directory;
+`user` and `backet` also prepare it when policy files are needed. Nested validation and reconciliation tasks receive the required tags.
+Selecting `export` suppresses installation, apply and cleanup even when combined
+with other tags.
 Cleanup removes declared users/buckets and is explicitly invoked with `--tags clean`.
 
 Molecule uses four prebuilt `redos:7.3.6` Docker containers and `minio-cluster`.
 It covers CRUD, read/write restrictions, granular access, anonymous presets,
-explicit bucket-creation denial and export/replay. Run `molecule test` from the
+explicit bucket-creation denial, dryrun without side effects and export/replay. Run `molecule test` from the
 role directory with images and dependencies available.
 
 Local tests from the repository root:
@@ -223,6 +261,10 @@ Local tests from the repository root:
 ```bash
 python -m unittest discover -s roles/minio-configuration/tests -v
 ANSIBLE_ROLES_PATH=roles ansible-playbook -i roles/minio-configuration/tests/inventory.yml roles/minio-configuration/tests/export.yml
+ANSIBLE_ROLES_PATH=roles ansible-playbook -i roles/minio-configuration/tests/inventory.yml roles/minio-configuration/tests/export.yml --tags export
+ANSIBLE_ROLES_PATH=roles ansible-playbook -i roles/minio-configuration/tests/inventory.yml roles/minio-configuration/tests/tags.yml --tags user
+ANSIBLE_ROLES_PATH=roles ansible-playbook -i roles/minio-configuration/tests/inventory.yml roles/minio-configuration/tests/dryrun.yml --tags dryrun
+ANSIBLE_ROLES_PATH=roles ansible-playbook -i roles/minio-configuration/tests/inventory.yml roles/minio-configuration/tests/prerequisites.yml
 ANSIBLE_ROLES_PATH=roles ansible-playbook -i roles/minio-configuration/tests/inventory.yml roles/minio-configuration/tests/groups.yml
 ANSIBLE_ROLES_PATH=roles ansible-playbook -i roles/minio-configuration/tests/inventory.yml roles/minio-configuration/tests/ownership.yml
 ```

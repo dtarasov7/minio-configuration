@@ -1,4 +1,14 @@
 ---
+- name: pre-req.yaml - resolve operation mode from requested tags
+  ansible.builtin.set_fact:
+    minio_configuration_effective_mode: >-
+      {{ 'export' if 'export' in ansible_run_tags else
+         ('dryrun' if ('dryrun' in ansible_run_tags or
+                       (ansible_check_mode and minio_configuration_mode == 'apply')) else minio_configuration_mode) }}
+  tags:
+    - always
+  run_once: true
+
 - name: pre-req.yaml - verify supported operating system
   ansible.builtin.assert:
     that:
@@ -16,8 +26,8 @@
   run_once: true
 - name: pre-req.yaml - build effective bucket and user configuration
   ansible.builtin.set_fact:
-    minio_configuration_effective_backets: '{{ minio_configuration_backets }}'
-    minio_configuration_effective_users: '{{ minio_configuration_users }}'
+    minio_configuration_effective_backets: "{{ minio_configuration_backets if minio_configuration_effective_mode in ['apply', 'dryrun'] else [] }}"
+    minio_configuration_effective_users: "{{ minio_configuration_users if minio_configuration_effective_mode in ['apply', 'dryrun'] else [] }}"
     minio_configuration_effective_backets_delete: '{{ minio_configuration_backets_delete | bool }}'
     minio_configuration_effective_users_delete: '{{ minio_configuration_users_delete | bool }}'
   no_log: '{{ minio_configuration_no_log }}'
@@ -36,12 +46,12 @@
     fail_msg: 'Each item in minio_configuration_backets must define a valid S3 bucket name: 3-63 chars, lowercase letters/digits/dot/hyphen, no underscores, and not
       an IPv4 address.'
   loop: '{{ minio_configuration_effective_backets }}'
-  when: minio_configuration_mode == "apply"
+  when: minio_configuration_effective_mode in ['apply', 'dryrun']
   run_once: true
 - name: pre-req.yaml - validate operation mode
   ansible.builtin.assert:
     that:
-    - minio_configuration_mode in ['apply', 'export']
+    - minio_configuration_mode in ['apply', 'export', 'dryrun']
   run_once: true
 - name: pre-req.yaml - validate user definitions
   ansible.builtin.assert:
@@ -58,7 +68,7 @@
     fail_msg: Use statements or groups; shared policy references and unknown user fields are not supported. New users require secret_key.
   loop: '{{ minio_configuration_effective_users }}'
   no_log: '{{ minio_configuration_no_log }}'
-  when: minio_configuration_mode == 'apply'
+  when: minio_configuration_effective_mode in ['apply', 'dryrun']
   run_once: true
 - name: pre-req.yaml - validate anonymous configuration
   ansible.builtin.assert:
@@ -68,10 +78,14 @@
     - item.anonymous is not defined or item.anonymous_policy is not defined
     fail_msg: Use either anonymous preset or anonymous_policy IAM document.
   loop: '{{ minio_configuration_effective_backets }}'
-  when: minio_configuration_mode == 'apply'
+  when: minio_configuration_effective_mode in ['apply', 'dryrun']
   run_once: true
 - name: pre-req.yaml - validate user statements
-  ansible.builtin.include_tasks: validate-policy.yaml
+  ansible.builtin.include_tasks:
+    file: validate-policy.yaml
+    apply:
+      tags:
+        - always
   vars:
     minio_configuration_document:
       Version: '2012-10-17'
@@ -82,19 +96,23 @@
   loop_control:
     loop_var: minio_configuration_statement_user
   when:
-  - minio_configuration_mode == 'apply'
+  - minio_configuration_effective_mode in ['apply', 'dryrun']
   - minio_configuration_statement_user.statements is defined
   no_log: '{{ minio_configuration_no_log }}'
   run_once: true
 - name: pre-req.yaml - validate anonymous policies
-  ansible.builtin.include_tasks: validate-policy.yaml
+  ansible.builtin.include_tasks:
+    file: validate-policy.yaml
+    apply:
+      tags:
+        - always
   vars:
     minio_configuration_document: '{{ minio_configuration_anonymous_bucket.anonymous_policy }}'
   loop: '{{ minio_configuration_effective_backets }}'
   loop_control:
     loop_var: minio_configuration_anonymous_bucket
   when:
-  - minio_configuration_mode == 'apply'
+  - minio_configuration_effective_mode in ['apply', 'dryrun']
   - minio_configuration_anonymous_bucket.anonymous_policy is defined
   run_once: true
 - name: pre-req.yaml - validate groups
@@ -105,8 +123,8 @@
     - item.keys() | difference(['name', 'members', 'statements', 'status']) | length == 0
     - item.members is not defined or (item.members is sequence and item.members is not string and item.members is not mapping)
     - item.status | default('enabled') in ['enabled', 'disabled']
-  loop: '{{ minio_configuration_groups }}'
-  when: minio_configuration_mode == 'apply'
+  loop: "{{ minio_configuration_groups if minio_configuration_effective_mode in ['apply', 'dryrun'] else [] }}"
+  when: minio_configuration_effective_mode in ['apply', 'dryrun']
   run_once: true
 - name: pre-req.yaml - validate mc alias
   ansible.builtin.assert:
@@ -115,27 +133,35 @@
     fail_msg: mc alias must start with a letter and contain only letters, digits, underscores or hyphens.
   run_once: true
 - name: pre-req.yaml - reject group members conflicting with user memberships
-  ansible.builtin.include_tasks: validate-group.yaml
-  loop: '{{ minio_configuration_groups }}'
+  ansible.builtin.include_tasks:
+    file: validate-group.yaml
+    apply:
+      tags:
+        - always
+  loop: "{{ minio_configuration_groups if minio_configuration_effective_mode in ['apply', 'dryrun'] else [] }}"
   loop_control:
     loop_var: minio_configuration_validation_group
     label: '{{ minio_configuration_validation_group.name }}'
-  when: minio_configuration_mode == 'apply'
+  when: minio_configuration_effective_mode in ['apply', 'dryrun']
   run_once: true
 - name: pre-req.yaml - validate group statements
-  ansible.builtin.include_tasks: validate-policy.yaml
+  ansible.builtin.include_tasks:
+    file: validate-policy.yaml
+    apply:
+      tags:
+        - always
   vars:
     minio_configuration_document:
       Version: '2012-10-17'
       Statement: '{{ minio_configuration_statement_group.statements }}'
     minio_configuration_require_sid: true
     minio_configuration_allow_empty_statements: true
-  loop: '{{ minio_configuration_groups }}'
+  loop: "{{ minio_configuration_groups if minio_configuration_effective_mode in ['apply', 'dryrun'] else [] }}"
   loop_control:
     loop_var: minio_configuration_statement_group
     label: '{{ minio_configuration_statement_group.name }}'
   when:
-  - minio_configuration_mode == 'apply'
+  - minio_configuration_effective_mode in ['apply', 'dryrun']
   - minio_configuration_statement_group.statements is defined
   run_once: true
 - name: pre-req.yaml - require unique user and group names
@@ -145,7 +171,7 @@
       length
     - minio_configuration_groups | map(attribute='name') | list | length == minio_configuration_groups | map(attribute='name') | unique(case_sensitive=true) | list | length
     fail_msg: User names must be unique, and group names must be unique.
-  when: minio_configuration_mode == 'apply'
+  when: minio_configuration_effective_mode in ['apply', 'dryrun']
   run_once: true
 
 - name: pre-req.yaml - reject shared named policy configuration
@@ -153,11 +179,11 @@
     that:
       - minio_configuration_policies is not defined
     fail_msg: 'Use owner statements; shared named policies are not supported.'
-  when: minio_configuration_mode == 'apply'
+  when: minio_configuration_effective_mode in ['apply', 'dryrun']
   run_once: true
 
 - name: pre-req.yaml - validate Sid uniqueness and prepare exclusive rule policies
   ansible.builtin.set_fact:
     minio_configuration_rule_policies: "{{ minio_configuration_effective_users | minio_configuration_policy_definitions(minio_configuration_groups) }}"
-  when: minio_configuration_mode == 'apply'
+  when: minio_configuration_effective_mode in ['apply', 'dryrun']
   run_once: true

@@ -13,14 +13,40 @@
     - /srv/minio/data2
   roles:
   - role: minio-cluster
+- name: Prepare existing mc client and alias for the configuration role
+  hosts: minio_cluster
+  become: false
+  tasks:
+    - name: converge.yml - install mc as a scenario prerequisite
+      ansible.builtin.get_url:
+        url: https://dl.min.io/client/mc/release/linux-amd64/mc
+        dest: /usr/local/bin/mc
+        mode: '0755'
+      run_once: true
+    - name: converge.yml - configure the existing administrative alias
+      ansible.builtin.command:
+        argv: [/usr/local/bin/mc, alias, set, production, 'http://localhost:9000', minioadmin, minioadmin123]
+      no_log: true
+      run_once: true
+- name: Preview configuration without applying it
+  hosts: minio_cluster
+  become: false
+  vars:
+    minio_configuration_alias: production
+    minio_configuration_mode: dryrun
+    minio_configuration_backets:
+      - name: b-dryrun-only
+    minio_configuration_users:
+      - name: u_dryrun_only
+        secret_key: dryrun_not_created_123
+  roles:
+    - minio-configuration
 - name: Converge initial MinIO configuration
   hosts: minio_cluster
   become: false
   vars:
     ansible_python_interpreter: /usr/bin/python3
     minio_configuration_alias: production
-    minio_configuration_root_user: minioadmin
-    minio_configuration_root_password: minioadmin123
     minio_configuration_metrics_user: minio_prometheus
     minio_configuration_backets:
     - name: b-test-a
@@ -71,8 +97,6 @@
   vars:
     ansible_python_interpreter: /usr/bin/python3
     minio_configuration_alias: production
-    minio_configuration_root_user: minioadmin
-    minio_configuration_root_password: minioadmin123
     minio_configuration_metrics_user: minio_prometheus
     minio_configuration_backets_delete: true
     minio_configuration_users_delete: true
@@ -124,8 +148,6 @@
   become: false
   vars:
     minio_configuration_alias: production
-    minio_configuration_root_user: minioadmin
-    minio_configuration_root_password: minioadmin123
     minio_configuration_backets:
     - name: b-test-b
       versioning: true
@@ -190,8 +212,6 @@
   become: false
   vars:
     minio_configuration_alias: production
-    minio_configuration_root_user: minioadmin
-    minio_configuration_root_password: minioadmin123
     minio_configuration_mode: export
     minio_configuration_backets_delete: true
     minio_configuration_users_delete: true
@@ -201,8 +221,6 @@
 - name: Apply exported configuration without user passwords
   hosts: minio_cluster
   become: false
-  vars:
-    vault_minio_root_password: minioadmin123
   tasks:
   - name: converge.yml - load exported inventory variables
     ansible.builtin.include_vars:

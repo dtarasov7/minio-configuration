@@ -1,6 +1,6 @@
 # Роль `minio-configuration`
 
-Версия роли: **1.0.0**.
+Версия роли: **2.0.0**.
 
 Роль выполняет CRUD бакетов и пользователей MinIO в соответствии с описанием в переменных.
 
@@ -16,34 +16,45 @@
 - удаляет лишних пользователей только если включен флаг удаления;
 - защищает администратора и пользователя метрик от автоматического удаления.
 
+## Требования и переход с 1.x
+
+До запуска роли установите `mc` (или `mcli`) и настройте административный alias на
+`minio_configuration_delegate_host`. В `minio_configuration_mc_binary_path` укажите
+полный путь с правильным именем бинарника. Роль выполняет `admin info <alias>` и
+останавливается, если бинарник отсутствует, alias не настроен или доступ не работает.
+Роль не устанавливает пакеты, не скачивает клиент, не меняет alias и не требует пароль администратора.
+
+Alias должен быть доступен пользователю, от которого Ansible выполняет команды,
+с учётом `become`. Адрес сервера, учётные данные и TLS задаются в конфигурации `mc`.
+Перед применением экспорта на другом сервере/delegate настройте alias отдельно.
+Если включено удаление пользователей, добавьте нестандартные административные и
+технические учётные записи в `minio_configuration_protected_users`.
+
+В версии 2.0.0 удалены переменные endpoint/scheme/port, учётных данных root,
+URL/checksum загрузки клиента и проверки сертификата при загрузке. Уберите их из
+inventory; необходимые настройки выполняйте вне роли. Поле `secret_key` прикладных
+пользователей сохранено.
+
 ## Переменные роли
 
 | Переменная | По умолчанию | Описание |
 |---|---|---|
 | `minio_configuration_nodes_group` | `minio_cluster` | Группа узлов MinIO |
 | `minio_configuration_delegate_host` | первый узел группы | Хост, где выполняются команды `mc` |
-| `minio_configuration_scheme` | `http` | Схема подключения |
-| `minio_configuration_port` | `9000` | Порт MinIO API |
-| `minio_configuration_endpoint` | `''` | Явный endpoint (`http://host:port`), если нужно переопределить |
-| `minio_configuration_root_user` | `minioadmin` | Админ-пользователь MinIO |
-| `minio_configuration_root_password` | `minioadmin_password_change_me` | Пароль админа |
 | `minio_configuration_metrics_user` | `minio_prometheus` | Пользователь метрик (защищен от удаления) |
 | `minio_configuration_alias` | `local` | Имя alias mc для всех команд и экспорта, например `production` |
-| `minio_configuration_mc_binary_path` | `/usr/local/bin/mc` | Путь к `mc` |
-| `minio_configuration_mc_binary_url` | `https://dl.min.io/client/mc/release/linux-amd64/mc` | URL `mc` |
-| `minio_configuration_mc_binary_checksum` | `''` | Checksum `mc` |
-| `minio_configuration_validate_certs` | `false` | Проверка TLS при скачивании |
+| `minio_configuration_mc_binary_path` | `/usr/local/bin/mc` | Полный путь с именем бинарника, например `/opt/minio/mcli` |
 | `minio_configuration_backets_delete` | `false` | Разрешить удаление лишних бакетов |
 | `minio_configuration_users_delete` | `false` | Разрешить удаление лишних пользователей |
 | `minio_configuration_backets` | см. ниже | Desired-state бакетов |
 | `minio_configuration_users` | см. ниже | Desired-state пользователей |
-| `minio_configuration_mode` | `apply` | `apply` — настройка, `export` — чтение текущей конфигурации |
+| `minio_configuration_mode` | `apply` | `apply` — применение, `export` — экспорт, `dryrun` — план без изменений |
 | `minio_configuration_export_path` | `{{ playbook_dir }}/minio-inventory.yml` | Файл inventory на контроллере; родительский каталог должен существовать |
 | `minio_configuration_policy_dir` | `/etc/minio/policies` | Каталог файлов политик на delegate-хосте |
 | `minio_configuration_no_log` | `true` | Скрывать задачи с паролями |
 | `minio_configuration_groups` | `[]` | Группы: `name`, необязательные `members`, `statements`, `status` (`enabled`/`disabled`) |
 | `minio_configuration_hashi_vault_path_password` | `''` | Путь для использования в lookup HashiCorp Vault в переменных |
-| `minio_configuration_protected_users` | `[root_user, metrics_user]` | Пользователи, которых нельзя удалять ролью |
+| `minio_configuration_protected_users` | `[minioadmin, minio_prometheus]` | Пользователи, которых нельзя удалять ролью |
 
 ### Значения по умолчанию
 
@@ -92,13 +103,19 @@ minio_configuration_users:
 ## Теги
 
 - `pre-req`
-- `install`
+- `install` — подготовка каталога политик; установка пакетов и скачивание `mc` не выполняются
 - `config`
 - `user`
 - `backet`
 - `ssl`
-- `export` (для чтения нужен также `config`; сам тег не переключает режим)
+- `dryrun` — просмотр запланированных операций без изменений
+- `export` — экспорт текущей конфигурации; автоматически выбирает режим `export`
 - `clean` (имеет `never`)
+
+Проверки `pre-req` и существующего alias в `config` помечены `always` и выполняются
+при выборе рабочих тегов. `user` и `backet` также создают каталог политик, если нужны файлы политик. Вложенные проверки и задачи согласования получают необходимые теги.
+Если среди выбранных тегов есть `export`, роль выполняет только проверки доступа
+и экспорт: подготовка каталога, применение и очистка пропускаются даже при сочетании с другими тегами.
 
 ## Пример inventory
 
@@ -112,8 +129,9 @@ minio_cluster:
   vars:
     ansible_user: ansible
     ansible_become: true
-    minio_configuration_root_user: minio_admin
-    minio_configuration_root_password: '{{ vault_minio_root_password }}'
+    minio_configuration_alias: production
+    minio_configuration_mc_binary_path: /usr/local/bin/mc
+    minio_configuration_protected_users: [minio_admin, minio_prometheus]
     minio_configuration_backets:
     - name: project-a
       versioning: true
@@ -305,27 +323,30 @@ Alice получает чтение через группу `readers`, Bob уд�
 
 ## Экспорт текущей конфигурации
 
-На `minio_configuration_delegate_host` должен быть установлен `mc`. В режиме
-`export` установка пакетов и применение конфигурации пропускаются. Роль настраивает
-локальный alias `mc`, читает MinIO и сохраняет YAML на **контроллере Ansible**.
+На `minio_configuration_delegate_host` должны быть установлены `mc` и настроен alias.
+Роль проверяет доступ через `mc admin info`, читает MinIO и сохраняет YAML на
+**контроллере Ansible**. Alias, endpoint и учётные данные роль не изменяет.
 Даже при включённых флагах удаления бакеты и пользователи не удаляются.
+Вместо `--tags export` по-прежнему можно задать `-e minio_configuration_mode=export`.
 
 Из корня проекта:
 
 ```bash
 ANSIBLE_ROLES_PATH=roles ansible-playbook -i inventory.ini roles/minio-configuration/examples/playbook.yml \
-  -e minio_configuration_mode=export \
+  --tags export \
   -e minio_configuration_export_path="$PWD/minio-inventory.yml"
 
-ANSIBLE_ROLES_PATH=roles ansible-playbook -i minio-inventory.yml roles/minio-configuration/examples/playbook.yml \
-  -e @secrets.yml
+ANSIBLE_ROLES_PATH=roles ansible-playbook -i minio-inventory.yml roles/minio-configuration/examples/playbook.yml
 ```
 
-`secrets.yml` должен определить `vault_minio_root_password`. Используйте Ansible Vault
-для хранения этого файла. Экспорт включает все бакеты и их анонимные политики,
+Административные учётные данные и endpoint в inventory не записываются.
+Список защищённых пользователей также сохраняется в inventory.
+Экспорт включает все бакеты и их анонимные политики,
 обычных внутренних пользователей, группы и статусы. Документы текущих прямых политик
 разворачиваются в `statements` каждого владельца; ссылки на общие политики не сохраняются.
-Членство экспортируется в `users[].groups`. При последующем применении создаются
+Все исходные IAM-политики, включая неназначенные, дополнительно сохраняются в
+`minio_configuration_exported_policies` как словарь «имя: документ». Это справочный
+снимок; режим `apply` его не применяет. Членство экспортируется в `users[].groups`. При последующем применении создаются
 отдельные политики владельцев без изменения прав остальных пользователей,
 которые могли использовать исходные общие политики.
 Стандартные анонимные режимы экспортируются как точные документы политики;
@@ -339,19 +360,39 @@ ANSIBLE_ROLES_PATH=roles ansible-playbook -i minio-inventory.yml roles/minio-con
 
 Секретные ключи пользователей и администратора не извлекаются. На исходном сервере
 экспорт можно применять без изменения паролей; при переносе на новый сервер добавьте
-`secret_key` каждому пользователю и задайте новые параметры подключения.
+`secret_key` каждому пользователю и заранее настройте alias на новый сервер.
 Встроенный root, service accounts, временные STS-ключи и внешние LDAP/OIDC-идентичности
 не входят в список обычных пользователей `mc admin user list` и этим режимом не копируются.
 Экспорт не является резервной копией объектов, lifecycle, квот, TLS или конфигурации сервера.
 Сохраняется включённость versioning, но не его расширенные настройки (MFA, исключения).
 
-Пароли можно задавать напрямую через переменные/Ansible Vault либо через lookup:
+Пароли прикладных пользователей можно задавать через inventory, Ansible Vault или
+lookup HashiCorp Vault в переменных, например `secret_key: "{{ vault_app_secret }}"`.
+Для таких lookup сохранена переменная `minio_configuration_hashi_vault_path_password`.
 
-```yaml
-minio_configuration_hashi_vault_path_password: secret=opensource/project/data/minio
-minio_configuration_root_password: '{{ lookup(''hashi_vault'', minio_configuration_hashi_vault_path_password + '':root'')
-  }}'
+## Dryrun — просмотр операций
+
+```bash
+ANSIBLE_ROLES_PATH=roles ansible-playbook -i inventory.ini roles/minio-configuration/examples/playbook.yml --tags dryrun
+ANSIBLE_ROLES_PATH=roles ansible-playbook -i inventory.ini roles/minio-configuration/examples/playbook.yml -e minio_configuration_mode=dryrun
+ANSIBLE_ROLES_PATH=roles ansible-playbook -i inventory.ini roles/minio-configuration/examples/playbook.yml --check
 ```
+
+Режим проверяет входные данные и alias, читает текущие бакеты, пользователей, группы,
+политики и назначения. В `minio_configuration_plan` выводятся операции, объекты,
+документы политик, изменения членства и удаления, разрешённые флагами.
+Пароли заменяются на `[REDACTED]`. Каталоги, файлы политик и экспортный inventory
+не создаются; изменяющие команды `mc` не запускаются. Запросы чтения в MinIO выполняются.
+План показывает операции, которые попытается выполнить `apply`, включая повторную
+запись политик, паролей и настройку versioning; это не точный счётчик изменений.
+План отражает момент чтения: параллельные изменения и разрешения на запись могут повлиять на применение.
+
+Для пользователей/групп: `-e minio_configuration_mode=dryrun --tags user` либо
+`--tags dryrun,user`. Для бакетов замените `user` на `backet`, для очистки — на `clean`.
+Один тег `dryrun` показывает обычный полный запуск без очистки.
+Если одновременно выбраны `export` и `dryrun`, приоритет имеет `export`.
+Стандартный `--check` включает просмотр применения/очистки; экспорт с `--check`
+читает сервер и предварительно проверяет запись inventory модулем `copy`.
 
 ## Проверки
 
@@ -370,6 +411,10 @@ molecule test
 ```bash
 python -m unittest discover -s roles/minio-configuration/tests -v
 ANSIBLE_ROLES_PATH=roles ansible-playbook -i roles/minio-configuration/tests/inventory.yml roles/minio-configuration/tests/export.yml
+ANSIBLE_ROLES_PATH=roles ansible-playbook -i roles/minio-configuration/tests/inventory.yml roles/minio-configuration/tests/export.yml --tags export
+ANSIBLE_ROLES_PATH=roles ansible-playbook -i roles/minio-configuration/tests/inventory.yml roles/minio-configuration/tests/tags.yml --tags user
+ANSIBLE_ROLES_PATH=roles ansible-playbook -i roles/minio-configuration/tests/inventory.yml roles/minio-configuration/tests/dryrun.yml --tags dryrun
+ANSIBLE_ROLES_PATH=roles ansible-playbook -i roles/minio-configuration/tests/inventory.yml roles/minio-configuration/tests/prerequisites.yml
 ANSIBLE_ROLES_PATH=roles ansible-playbook -i roles/minio-configuration/tests/inventory.yml roles/minio-configuration/tests/groups.yml
 ANSIBLE_ROLES_PATH=roles ansible-playbook -i roles/minio-configuration/tests/inventory.yml roles/minio-configuration/tests/ownership.yml
 ```

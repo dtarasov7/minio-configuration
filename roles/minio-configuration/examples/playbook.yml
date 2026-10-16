@@ -1,5 +1,5 @@
 ---
-- name: Configure or export MinIO
+- name: Configure, preview or export MinIO using an existing mc alias
   hosts: minio_cluster
   become: true
   roles:

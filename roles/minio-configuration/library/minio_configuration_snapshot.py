@@ -153,6 +153,8 @@ class Snapshot:
             groups.append({'name': name, 'members': sorted(info.get('members', [])),
                            'status': status, 'policies': policies})
 
+        policy_records = self.read('admin', 'policy', 'list', self.alias)
+        names.update(record['policy'] for record in policy_records)
         documents = {}
         for name in sorted(names):
             response = self.one('admin', 'policy', 'info', self.alias, name)
@@ -163,6 +165,7 @@ class Snapshot:
         return {'minio_configuration_backets': buckets,
                 'minio_configuration_users': users,
                 'minio_configuration_groups': groups,
+                'minio_configuration_exported_policies': documents,
                 'minio_configuration_backets_delete': False,
                 'minio_configuration_users_delete': False,
                 'minio_configuration_mode': 'apply'}

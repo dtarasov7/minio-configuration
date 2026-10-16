@@ -7,15 +7,15 @@
     minio_configuration_alias: production
     ansible_python_interpreter: /usr/bin/python3
   tasks:
-    - name: verify.yaml - configure admin alias
+    - name: verify.yaml - verify existing admin alias
       ansible.builtin.command: >-
-        /usr/local/bin/mc alias set {{ minio_configuration_alias }} http://127.0.0.1:9000 minioadmin minioadmin123
+        /usr/local/bin/mc admin info {{ minio_configuration_alias }}
       changed_when: false
 
     - name: verify.yaml - validate final buckets and users
       ansible.builtin.shell: |
         set -euo pipefail
-        /usr/local/bin/mc alias set {{ minio_configuration_alias }} http://127.0.0.1:9000 minioadmin minioadmin123 >/dev/null
+        /usr/local/bin/mc admin info {{ minio_configuration_alias }} >/dev/null
 
         /usr/local/bin/mc ls {{ minio_configuration_alias }} --json > /tmp/molecule-buckets.jsonl
         grep -q '"key":"b-test-b/"' /tmp/molecule-buckets.jsonl || {
@@ -56,6 +56,19 @@
           cat /tmp/molecule-users.jsonl
           exit 1
         }
+      args:
+        executable: /bin/bash
+      changed_when: false
+
+    - name: verify.yml - ensure dryrun created neither bucket nor user
+      ansible.builtin.shell: |
+        set -euo pipefail
+        if /usr/local/bin/mc stat {{ minio_configuration_alias }}/b-dryrun-only; then
+          echo 'Dryrun created a bucket'; exit 1
+        fi
+        if /usr/local/bin/mc admin user info {{ minio_configuration_alias }} u_dryrun_only; then
+          echo 'Dryrun created a user'; exit 1
+        fi
       args:
         executable: /bin/bash
       changed_when: false

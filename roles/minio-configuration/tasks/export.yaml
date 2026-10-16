@@ -29,10 +29,8 @@
            'vars': minio_configuration_snapshot_result.configuration | combine({
              'minio_configuration_nodes_group': minio_configuration_nodes_group,
              'minio_configuration_delegate_host': minio_configuration_delegate_host,
-             'minio_configuration_endpoint': minio_configuration_effective_endpoint,
-             'minio_configuration_root_user': minio_configuration_root_user,
-             'minio_configuration_root_password': '{{ vault_minio_root_password }}',
              'minio_configuration_mc_binary_path': minio_configuration_mc_binary_path,
+             'minio_configuration_protected_users': minio_configuration_protected_users,
              'minio_configuration_alias': minio_configuration_alias
            })}}}} | to_nice_yaml(indent=2, width=120) }}
     dest: "{{ minio_configuration_export_path }}"

@@ -37,6 +37,8 @@ class FakeModule:
             ('admin', 'group', 'list', 'local'): [{'groups': ['staff']}],
             ('admin', 'group', 'info', 'local', 'staff'): [
                 {'groupStatus': 'disabled', 'groupPolicy': 'read', 'members': ['reader']}],
+            ('admin', 'policy', 'list', 'local'): [{'policy': name} for name in ['read', 'deny', 'unused']],
+            ('admin', 'policy', 'info', 'local', 'unused'): [{'policyInfo': {'policy': ANONYMOUS}}],
             ('admin', 'policy', 'info', 'local', 'read'): [{'policyInfo': {'policy': READ}}],
             ('admin', 'policy', 'info', 'local', 'deny'): [{'policyInfo': {'policy': READ}}],
         }
@@ -63,6 +65,8 @@ class SnapshotTests(unittest.TestCase):
         self.assertEqual(result['minio_configuration_groups'][0]['status'], 'disabled')
         self.assertEqual(result['minio_configuration_users'][1]['groups'], ['staff'])
         self.assertEqual(result['minio_configuration_groups'][0]['statements'], READ['Statement'])
+        self.assertEqual(result['minio_configuration_exported_policies'],
+                         {'read': READ, 'deny': READ, 'unused': ANONYMOUS})
         self.assertNotIn('minio_configuration_policies', result)
         self.assertNotIn('secret_key', json.dumps(result))
         for command in module.calls:
@@ -83,7 +87,9 @@ class SnapshotTests(unittest.TestCase):
         module.responses[('ls', 'local')] = []
         module.responses[('admin', 'user', 'list', 'local')] = []
         module.responses[('admin', 'group', 'list', 'local')] = [{'status': 'success'}]
+        module.responses[('admin', 'policy', 'list', 'local')] = []
         result = SNAPSHOT.Snapshot(module).collect()
+        self.assertEqual(result['minio_configuration_exported_policies'], {})
         self.assertEqual(result['minio_configuration_users'], [])
         self.assertEqual(result['minio_configuration_backets'], [])
         self.assertNotIn('minio_configuration_policies', result)
