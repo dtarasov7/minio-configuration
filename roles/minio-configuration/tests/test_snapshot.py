@@ -71,6 +71,12 @@ class SnapshotTests(unittest.TestCase):
         for command in module.calls:
             self.assertFalse({'set', 'add', 'remove', 'create', 'attach', 'detach'} & set(command))
 
+    def test_bucket_name_listing_only_reads_names_and_accepts_pretty_json(self):
+        module = FakeModule()
+        names = SNAPSHOT.Snapshot(module).bucket_names()
+        self.assertEqual(names, ['public', 'private'])
+        self.assertEqual(module.calls, [['/mc', '--json', 'ls', 'local']])
+
     def test_custom_alias_used_in_every_snapshot_command(self):
         module = FakeModule()
         module.params = {'binary': '/mc', 'alias': 'production'}

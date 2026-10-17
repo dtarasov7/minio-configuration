@@ -1,6 +1,6 @@
 # Роль `minio-configuration`
 
-Версия роли: **3.9.0**.
+Версия роли: **3.10.0**.
 
 ## Режимы запуска — кратко
 
@@ -184,6 +184,29 @@ minio_cluster:
 ```bash
 ansible-playbook -i inventory.ini roles/minio-configuration/examples/playbook.yml
 ```
+
+## Versioning бакетов
+
+Поле `versioning` задаёт, нужно ли создавать новые версии объектов. Отсутствие поля
+равнозначно `versioning: false`.
+
+| Текущее состояние | `versioning: false` | `versioning: true` |
+|---|---|---|
+| Disabled / Unversioned | Сохранить исходное состояние | Включить: Enabled |
+| Enabled | Приостановить: Suspended | Без изменений |
+| Suspended | Без изменений | Возобновить: Enabled |
+
+Новый бакет с `false` остаётся Unversioned: команда приостановки для него не вызывается.
+У существующего бакета, который уже имеет состояние Suspended, значение `false`
+сохраняет это состояние. Suspended означает приостановку создания новых версий;
+сохранённые версии остаются доступны. Поэтому `false` не гарантирует надпись Disabled
+у бакета, для которого versioning уже настраивался.
+
+Роль читает состояние перед изменением и выполняет `enable`/`suspend` только при
+необходимости. В штатном `--check` запросы чтения выполняются только для существующих
+бакетов, а команды изменения не запускаются. Boolean-экспорт сохраняет включённость
+versioning; Unversioned и Suspended экспортируются как `false`.
+Подробнее: [приостановка versioning в MinIO](https://docs.min.io/aistor/administration/objects-and-versioning/versioning/suspend-versioning/).
 
 ## Анонимный доступ
 

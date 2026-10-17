@@ -1,5 +1,5 @@
 ---
-- name: Verify bucket configuration never requests bucket removal
+- name: Verify bucket versioning transitions without bucket removal
   hosts: minio_cluster
   gather_facts: false
   vars:
@@ -7,11 +7,28 @@
     minio_configuration_alias: production
     minio_configuration_users: []
     minio_configuration_groups: []
+    initial_bucket_states:
+      enabled-off: Enabled
+      enabled-on: Enabled
+      suspended-off: Suspended
+      suspended-on: Suspended
+      empty-off: ''
     minio_configuration_backets:
       - name: public
         versioning: false
       - name: private
         versioning: true
+      - name: default-off
+      - name: enabled-off
+        versioning: false
+      - name: enabled-on
+        versioning: true
+      - name: suspended-off
+        versioning: false
+      - name: suspended-on
+        versioning: true
+      - name: empty-off
+        versioning: false
   tasks:
 
     - name: Prepare fixture log directory
@@ -25,6 +42,14 @@
         content: ''
         dest: "{{ playbook_dir }}/../../../.ansible/bucket-commands.jsonl"
         mode: '0600'
+      check_mode: false
+
+    - name: Seed existing buckets in all versioning states
+      ansible.builtin.copy:
+        content: '{{ initial_bucket_states | to_json }}'
+        dest: '{{ playbook_dir }}/../../../.ansible/bucket-state.json'
+        mode: '0600'
+      check_mode: false
 
     - name: Apply an empty bucket list
       ansible.builtin.include_role:
@@ -44,7 +69,13 @@
       ansible.builtin.set_fact:
         bucket_commands: "{{ lookup('file', playbook_dir + '/../../../.ansible/bucket-commands.jsonl').splitlines() | map('from_json') | list }}"
 
-    - name: Verify only bucket creation and versioning were requested
+    - name: Read final versioning states and mutating version commands
+      ansible.builtin.set_fact:
+        final_bucket_states: '{{ lookup("file", playbook_dir + "/../../../.ansible/bucket-state.json") | from_json }}'
+        version_commands: '{{ bucket_commands | selectattr("0", "equalto", "version") | rejectattr("1", "equalto", "info") | list }}'
+
+    - name: Verify new disabled buckets stay unversioned and only needed transitions run
       ansible.builtin.assert:
         that:
-          - bucket_commands == [['mb', '--ignore-existing', 'production/public'], ['mb', '--ignore-existing', 'production/private'], ['version', 'suspend', 'production/public'], ['version', 'enable', 'production/private']]
+          - "final_bucket_states == (initial_bucket_states if ansible_check_mode else {'public': '', 'private': 'Enabled', 'default-off': '', 'enabled-off': 'Suspended', 'enabled-on': 'Enabled', 'suspended-off': 'Suspended', 'suspended-on': 'Enabled', 'empty-off': ''})"
+          - "version_commands == ([] if ansible_check_mode else [['version', 'enable', 'production/private'], ['version', 'suspend', 'production/enabled-off'], ['version', 'enable', 'production/suspended-on']])"

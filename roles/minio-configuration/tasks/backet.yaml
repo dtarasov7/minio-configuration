@@ -9,18 +9,51 @@
   run_once: true
   delegate_to: "{{ minio_configuration_delegate_host }}"
 
-- name: backet.yaml - configure bucket versioning mode
-  ansible.builtin.command:
-    cmd: >-
-      {{ minio_configuration_mc_binary_path }} version
-      {{ 'enable' if (item.versioning | default(false) | bool) else 'suspend' }}
-      {{ minio_configuration_alias }}/{{ item.name }}
-  loop: "{{ minio_configuration_effective_backets }}"
-  loop_control:
-    label: "{{ item.name }}"
+- name: backet.yaml - list buckets for native check mode reads
+  minio_configuration_snapshot:
+    binary: '{{ minio_configuration_mc_binary_path }}'
+    alias: '{{ minio_configuration_alias }}'
+    operation: bucket_names
+  register: minio_configuration_bucket_listing
+  when: minio_configuration_effective_backets | length > 0
   changed_when: false
+  check_mode: false
   run_once: true
-  delegate_to: "{{ minio_configuration_delegate_host }}"
+  delegate_to: '{{ minio_configuration_delegate_host }}'
+
+- name: backet.yaml - read current bucket versioning
+  ansible.builtin.command:
+    argv: ['{{ minio_configuration_mc_binary_path }}', --json, version, info, '{{ minio_configuration_alias }}/{{ item.name }}']
+  vars:
+    minio_configuration_existing_bucket_names: >-
+      {{ minio_configuration_bucket_listing.bucket_names | default([]) }}
+  loop: '{{ minio_configuration_effective_backets }}'
+  loop_control:
+    label: '{{ item.name }}'
+  when: item.name in minio_configuration_existing_bucket_names
+  register: minio_configuration_bucket_versioning
+  changed_when: false
+  check_mode: false
+  run_once: true
+  delegate_to: '{{ minio_configuration_delegate_host }}'
+
+- name: backet.yaml - configure bucket versioning only when needed
+  ansible.builtin.command:
+    argv:
+      - '{{ minio_configuration_mc_binary_path }}'
+      - version
+      - "{{ 'enable' if item.item.versioning | default(false) | bool else 'suspend' }}"
+      - '{{ minio_configuration_alias }}/{{ item.item.name }}'
+  vars:
+    minio_configuration_current_versioning: >-
+      {{ '' if item.skipped | default(false)
+         else (item.stdout | from_json).versioning.status }}
+  loop: '{{ minio_configuration_bucket_versioning.results | default([]) }}'
+  loop_control:
+    label: '{{ item.item.name }}'
+  when: (item.item.versioning | default(false) | bool) != (minio_configuration_current_versioning == 'Enabled')
+  run_once: true
+  delegate_to: '{{ minio_configuration_delegate_host }}'
 
 - name: backet.yaml - configure anonymous preset
   ansible.builtin.command:

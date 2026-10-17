@@ -1,5 +1,12 @@
 # Changes
 
+## 3.10.0 — 2026-10-17
+
+- `versioning: false` preserves the initial Unversioned state of a new bucket; `mc version suspend` is only called when versioning is enabled.
+- The role reads current state before changing it and skips matching settings; Enabled → false uses Suspended, while Suspended → true uses Enabled.
+- Native `--check` does not read versioning for buckets that have not been created and skips mutating commands.
+- Updated both READMEs with Disabled/Unversioned, Enabled and Suspended semantics; the fixture verifies transitions, new unversioned buckets and native check. Molecule verifies the initial state of buckets declared with false.
+
 ## 3.9.0 — 2026-10-16
 
 - Removing a user, dropping a rule or changing its Sid removes unused owner policies named `policy-user-…` / `policy-grp-…`.

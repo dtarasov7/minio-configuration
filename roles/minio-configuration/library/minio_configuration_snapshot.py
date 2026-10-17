@@ -109,6 +109,10 @@ class Snapshot:
             raise ValueError('Expected one mc response for {}'.format(arguments))
         return records[0]
 
+    def bucket_names(self):
+        records = self.read('ls', self.alias)
+        return [record['key'].rstrip('/') for record in records]
+
     def collect(self):
         buckets = []
         users = []
@@ -188,10 +192,13 @@ class Snapshot:
 def main():
     module = AnsibleModule(argument_spec={'binary': {'type': 'path', 'required': True},
                                          'alias': {'type': 'str', 'default': 'local'},
-                                         'operation': {'type': 'str', 'choices': ['snapshot', 'assignments'], 'default': 'snapshot'}},
+                                         'operation': {'type': 'str', 'choices': ['snapshot', 'assignments', 'bucket_names'], 'default': 'snapshot'}},
                            supports_check_mode=True)
     snapshot = Snapshot(module)
     try:
+        if module.params['operation'] == 'bucket_names':
+            names = snapshot.bucket_names()
+            module.exit_json(changed=False, bucket_names=names)
         if module.params['operation'] == 'assignments':
             assignments = snapshot.collect_assignments()
             module.exit_json(changed=False, assignments=assignments)

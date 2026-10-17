@@ -1,6 +1,6 @@
 # minio-configuration
 
-Role version: **3.9.0**.
+Role version: **3.10.0**.
 
 ## Run modes at a glance
 
@@ -75,6 +75,28 @@ The role does not change callback settings for the whole playbook.
 `debug` output; saving the report is unaffected.
 See the [default callback options](https://docs.ansible.com/projects/ansible/latest/collections/ansible/builtin/default_callback.html).
 `no_log` protects secrets rather than controlling normal output volume.
+
+## Bucket versioning
+
+The `versioning` field controls whether new object versions are created. Omitting it
+is equivalent to `versioning: false`.
+
+| Current state | `versioning: false` | `versioning: true` |
+|---|---|---|
+| Disabled / Unversioned | Preserve the initial state | Enable: Enabled |
+| Enabled | Suspend: Suspended | No change |
+| Suspended | No change | Resume: Enabled |
+
+A new bucket with `false` remains Unversioned: no suspension command is sent.
+For an existing Suspended bucket, `false` preserves that state. Suspension stops
+creating new versions while retaining existing versions. Consequently, `false`
+does not guarantee a Disabled label when versioning has already been configured.
+
+The role reads current state and invokes `enable`/`suspend` only when required.
+Native `--check` reads versioning only for existing buckets and skips mutating
+commands. Boolean export records whether versioning is enabled; both Unversioned
+and Suspended export as `false`.
+See [MinIO versioning suspension](https://docs.min.io/aistor/administration/objects-and-versioning/versioning/suspend-versioning/).
 
 ## Anonymous access
 

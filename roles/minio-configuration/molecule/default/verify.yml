@@ -37,6 +37,11 @@
         done
         /usr/local/bin/mc cat {{ minio_configuration_alias }}/b-test-a/retained.txt | grep -q preserve-this-data
 
+        for bucket in b-test-a b-test-empty; do
+          /usr/local/bin/mc --json version info {{ minio_configuration_alias }}/"$bucket" |
+            /usr/bin/python3 -c 'import json, sys; assert json.load(sys.stdin)["versioning"]["status"] == ""'
+        done
+
         /usr/local/bin/mc admin user list {{ minio_configuration_alias }} --json > /tmp/molecule-users.jsonl
         grep -q '"accessKey":"u_test_rw"' /tmp/molecule-users.jsonl || {
           echo 'Expected user u_test_rw is missing'
