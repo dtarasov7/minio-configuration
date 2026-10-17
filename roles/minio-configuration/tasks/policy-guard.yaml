@@ -6,7 +6,6 @@
     alias: "{{ minio_configuration_alias }}"
     operation: assignments
   register: minio_configuration_policy_assignments
-  when: minio_configuration_rule_policies | default([]) | length > 0
   run_once: true
   delegate_to: "{{ minio_configuration_delegate_host }}"
 

@@ -1,6 +1,6 @@
 # Роль `minio-configuration`
 
-Версия роли: **3.8.0**.
+Версия роли: **3.9.0**.
 
 ## Режимы запуска — кратко
 
@@ -292,8 +292,23 @@ minio_configuration_users:
 Прямые назначения синхронизируются с текущим списком `statements`.
 `statements: []` или отсутствие поля снимает все прямые политики владельца.
 Повторный запуск обновляет документ с тем же именем. При удалении/переименовании
-`Sid` прежняя политика отсоединяется, новая создаётся и назначается. Неиспользуемый
-документ старой политики на сервере не удаляется автоматически.
+`Sid` прежняя политика отсоединяется, новая создаётся и назначается.
+Устаревшие политики вида `policy-user-<имя>-<Sid>` и `policy-grp-<имя>-<Sid>`
+удаляются из MinIO, если после применения они больше никому не назначены.
+Кандидаты определяются по прямым назначениям обрабатываемых владельцев на начало
+прогона; перед удалением назначения читаются повторно. Политики с оставшимися
+назначениями другим пользователям или группам, а также политики вне этих
+кандидатов сохраняются. Ошибки чтения или удаления останавливают роль.
+
+Смена имени пользователя означает создание новой учётной записи и новых политик
+с теми же `Sid` для нового имени. При `minio_configuration_users_delete: true`
+старая учётная запись удаляется, если она не защищена; её неиспользуемые политики
+также удаляются. Без этого флага старая учётная запись и её политики сохраняются.
+Для новой учётной записи требуется `secret_key`.
+В `dry` удаление каждого документа показано как `remove_policy` в разделе
+«Планируем удалить». Этот же механизм действует при удалении правила или смене `Sid`.
+Групповая политика не удаляется, пока она назначена существующей группе,
+даже если в группе нет участников.
 
 Права задаются в `statements` каждого пользователя или группы. Перед любым
 изменением конфигурации роль читает прямые назначения внутренних пользователей
@@ -463,8 +478,8 @@ ANSIBLE_ROLES_PATH=roles ansible-playbook -i inventory.ini roles/minio-configura
 значение нельзя прочитать и сравнить. Ключи заменяются на `[REDACTED]`.
 Публичные пресеты `anonymous: download|upload|public` показываются как планируемая
 установка пресета: снимок содержит JSON-политику, а не исходное имя пресета.
-Удаление назначения политики означает отзыв прямого назначения, а не удаление
-документа политики на сервере. Бакеты не удаляются.
+План отдельно показывает `detach_policy` (отзыв прямого назначения) и
+`remove_policy` (удаление неиспользуемого документа политики). Бакеты не удаляются.
 
 Та же сводка сохраняется **на Ansible-контроллере** в
 `minio_configuration_dry_report_path` (по умолчанию `{{ playbook_dir }}/minio-plan.yml`).
@@ -515,6 +530,7 @@ molecule test
 
 ```bash
 python -m unittest discover -s roles/minio-configuration/tests -v
+ANSIBLE_ROLES_PATH=roles ansible-playbook -i roles/minio-configuration/tests/inventory.yml roles/minio-configuration/tests/policy-remove.yml
 ANSIBLE_ROLES_PATH=roles ansible-playbook -i roles/minio-configuration/tests/inventory.yml roles/minio-configuration/tests/export.yml -e minio_configuration_mode=export
 ANSIBLE_ROLES_PATH=roles ansible-playbook -i roles/minio-configuration/tests/inventory.yml roles/minio-configuration/tests/tags.yml --tags user
 ANSIBLE_ROLES_PATH=roles ansible-playbook -i roles/minio-configuration/tests/inventory.yml roles/minio-configuration/tests/dryrun.yml -e minio_configuration_mode=dry

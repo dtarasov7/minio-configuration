@@ -140,6 +140,66 @@ class PlanTests(unittest.TestCase):
         self.assertEqual(json.dumps(summary), original)
         self.assertIn('document', original)
 
+    def seed_owner_policies(self, owner='old'):
+        statements = [dict(READ['Statement'][0], Sid=sid) for sid in ['One', 'Two', 'Three']]
+        self.current['minio_configuration_users'].append(
+            {'name': owner, 'status': 'enabled', 'groups': [], 'statements': statements})
+        for statement in statements:
+            name = POLICIES.policy_name('user', owner, statement['Sid'])
+            self.current['minio_configuration_exported_policies'][name] = {
+                'Version': '2012-10-17', 'Statement': [statement]}
+            self.assignments[name] = [{'kind': 'user', 'name': owner}]
+        return statements
+
+    def test_renamed_user_plans_old_policy_removal_and_three_new_policies(self):
+        statements = self.seed_owner_policies()
+        user = {'name': 'renamed', 'secret_key': 'secret123', 'statements': statements}
+        original_assignments = json.dumps(self.assignments)
+        plan = self.plan(users=[user], users_delete=True)
+        removed = [op['target'] for op in plan if op['action'] == 'remove_policy']
+        self.assertEqual(removed, ['policy-user-old-One', 'policy-user-old-Three', 'policy-user-old-Two'])
+        self.assertIn({'action': 'remove_user', 'target': 'old'}, plan)
+        self.assertEqual(len([op for op in plan if op['action'] == 'create_policy']), 3)
+        self.assertEqual(len([op for op in plan if op['action'] == 'attach_policy']), 3)
+        summary = POLICIES.plan_summary(plan)
+        self.assertEqual(len([item for item in summary['delete'] if item['type'] == 'policy']), 3)
+        self.assertEqual(json.dumps(self.assignments), original_assignments)
+
+    def test_removed_user_policies_shared_with_surviving_owners_are_kept(self):
+        self.seed_owner_policies()
+        self.assignments['policy-user-old-One'].append({'kind': 'user', 'name': 'reader'})
+        self.assignments['policy-user-old-Two'].append({'kind': 'grp', 'name': 'external'})
+        plan = self.plan(users_delete=True)
+        self.assertEqual([op['target'] for op in plan if op['action'] == 'remove_policy'],
+                         ['policy-user-old-Three'])
+
+    def test_policies_are_kept_when_old_user_is_preserved_or_protected(self):
+        self.seed_owner_policies()
+        for options in [{'users_delete': False},
+                        {'users_delete': True, 'protected_users': ['reader', 'old']},
+                        {'users_delete': True, 'tags': ['backet']},
+                        {'users_delete': True, 'skip_tags': ['user']}]:
+            with self.subTest(options=options):
+                self.assertFalse(any(op['action'] == 'remove_policy' for op in self.plan(**options)))
+
+    def test_changed_sid_detaches_and_removes_only_the_old_owned_policy(self):
+        old = 'policy-user-reader-Old'
+        self.assignments[old] = [{'kind': 'user', 'name': 'reader'}]
+        self.current['minio_configuration_exported_policies'][old] = READ
+        self.assignments['policy-user-reader-other-Read'] = [{'kind': 'user', 'name': 'reader'}]
+        self.current['minio_configuration_exported_policies']['policy-user-orphan-Read'] = READ
+        user = {'name': 'reader', 'groups': ['staff'], 'statements': [dict(READ['Statement'][0], Sid='New')]}
+        plan = self.plan(users=[user])
+        self.assertIn({'action': 'detach_policy', 'target': 'reader', 'kind': 'user', 'policy': old}, plan)
+        self.assertEqual([op['target'] for op in plan if op['action'] == 'remove_policy'], [old])
+
+    def test_removed_group_rule_policy_is_deleted_after_detachment(self):
+        old = 'policy-grp-staff-Old'
+        self.assignments[old] = [{'kind': 'grp', 'name': 'staff'}]
+        self.current['minio_configuration_exported_policies'][old] = READ
+        plan = self.plan(groups=[{'name': 'staff'}])
+        self.assertIn({'action': 'remove_policy', 'target': old}, plan)
+
     def test_config_scope_has_no_mutations(self):
         self.assertEqual(self.plan(tags=['config']), [])
 

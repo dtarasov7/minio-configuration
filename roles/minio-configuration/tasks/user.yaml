@@ -23,6 +23,14 @@
     minio_configuration_protected_users_effective: "{{ minio_configuration_protected_users | list | unique }}"
   run_once: true
 
+- name: user.yaml - calculate users to remove excluding protected accounts
+  ansible.builtin.set_fact:
+    minio_configuration_removed_users: >-
+      {{ (minio_configuration_existing_users | difference(minio_configuration_desired_users)
+          | difference(minio_configuration_protected_users_effective))
+         if minio_configuration_effective_users_delete | bool else [] }}
+  run_once: true
+
 - name: user.yaml - require a password for new users
   ansible.builtin.assert:
     quiet: true
@@ -89,16 +97,19 @@
 - name: user.yaml - delete unmanaged users when enabled
   ansible.builtin.command:
     argv: ["{{ minio_configuration_mc_binary_path }}", admin, user, remove, "{{ minio_configuration_alias }}", "{{ item }}"]
-  loop: >-
-    {{
-      minio_configuration_existing_users
-      | difference(minio_configuration_desired_users)
-      | difference(minio_configuration_protected_users_effective)
-    }}
+  loop: "{{ minio_configuration_removed_users }}"
   loop_control:
     label: "{{ item }}"
   when: minio_configuration_effective_users_delete | bool
   run_once: true
   delegate_to: "{{ minio_configuration_delegate_host }}"
 
+
+- name: user.yaml - remove obsolete owner policies after reconciliation
+  ansible.builtin.include_tasks:
+    file: policy-remove.yaml
+    apply:
+      tags:
+        - user
+  run_once: true
 

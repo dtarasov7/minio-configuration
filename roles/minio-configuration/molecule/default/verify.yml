@@ -54,6 +54,14 @@
           exit 1
         fi
 
+        /usr/local/bin/mc admin policy list {{ minio_configuration_alias }} --json > /tmp/molecule-policies.jsonl
+        for policy in policy-user-u_test_ro-Rule1 policy-user-u_test_ro-Rule2; do
+          if grep -q "\"policy\":\"$policy\"" /tmp/molecule-policies.jsonl; then
+            echo "Deleted user's policy $policy should be removed"
+            exit 1
+          fi
+        done
+
         grep -q '"accessKey":"minio_prometheus"' /tmp/molecule-users.jsonl || {
           echo 'Expected user minio_prometheus is missing'
           cat /tmp/molecule-users.jsonl

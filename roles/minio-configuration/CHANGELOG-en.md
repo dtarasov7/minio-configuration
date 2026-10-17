@@ -1,5 +1,13 @@
 # Changes
 
+## 3.9.0 — 2026-10-16
+
+- Removing a user, dropping a rule or changing its Sid removes unused owner policies named `policy-user-…` / `policy-grp-…`.
+- Dry models surviving assignments and lists obsolete document deletions as `remove_policy`, including username changes with multiple rules.
+- Apply rereads assignments after reconciliation and user deletion; policies with surviving owners, unrelated documents and policies of untouched protected users are retained.
+- User deletion and policy candidate selection share the same protected deletion list; native `--check` does not execute mutating commands.
+- Updated both READMEs and added coverage for renaming a user with three policies, shared assignments, protected users, Sid changes and dry/apply/check agreement.
+
 ## 3.8.0 — 2026-10-16
 
 - Generated IAM policies use the `policy-` prefix: `policy-user-<name>-<Sid>` and `policy-grp-<name>-<Sid>`.

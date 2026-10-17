@@ -1,0 +1,29 @@
+---
+
+- name: policy-remove.yaml - select obsolete policies of handled owners
+  ansible.builtin.set_fact:
+    minio_configuration_obsolete_policy_candidates: >-
+      {{ minio_configuration_policy_assignments.assignments | minio_configuration_obsolete_policy_candidates(
+           minio_configuration_rule_policies,
+           minio_configuration_effective_users, minio_configuration_groups, minio_configuration_removed_users) }}
+  run_once: true
+
+- name: policy-remove.yaml - read remaining policy owners before deletion
+  minio_configuration_snapshot:
+    binary: '{{ minio_configuration_mc_binary_path }}'
+    alias: '{{ minio_configuration_alias }}'
+    operation: assignments
+  register: minio_configuration_remaining_policy_assignments
+  when: minio_configuration_obsolete_policy_candidates | length > 0
+  run_once: true
+  delegate_to: '{{ minio_configuration_delegate_host }}'
+
+- name: policy-remove.yaml - delete obsolete policies without remaining owners
+  ansible.builtin.command:
+    argv: ['{{ minio_configuration_mc_binary_path }}', admin, policy, remove, '{{ minio_configuration_alias }}', '{{ item }}']
+  loop: >-
+    {{ minio_configuration_obsolete_policy_candidates | minio_configuration_unused_policies(
+         minio_configuration_remaining_policy_assignments.assignments | default({})) }}
+  when: minio_configuration_obsolete_policy_candidates | length > 0
+  run_once: true
+  delegate_to: '{{ minio_configuration_delegate_host }}'

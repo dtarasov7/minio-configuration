@@ -48,10 +48,34 @@ def policy_names(owner, kind):
     return [definition['name'] for definition in definitions]
 
 
+def obsolete_policy_candidates(assignments, rules, users, groups, removed_users=None):
+    """Consider only obsolete owner policies attached to owners handled by this run."""
+    desired_names = {rule['name'] for rule in rules}
+    handled_users = users + [{'name': name} for name in (removed_users or [])]
+    owners = ([{'kind': 'user', 'name': user['name']} for user in handled_users]
+              + [{'kind': 'grp', 'name': group['name']} for group in groups])
+    candidates = []
+    for name, attached in assignments.items():
+        if name in desired_names:
+            continue
+        for owner in owners:
+            pattern = r'policy-{}-{}-[A-Za-z0-9]+'.format(owner['kind'], re.escape(owner['name']))
+            if owner in attached and re.fullmatch(pattern, name):
+                candidates.append(name)
+                break
+    return sorted(candidates)
+
+
+def unused_policies(candidates, assignments):
+    """Keep policies with any remaining assignment, including owners outside inventory."""
+    return [name for name in candidates if not assignments.get(name)]
+
+
 def configuration_plan(current, assignments, users, groups, buckets, rules,
                        users_delete, protected_users, tags, skip_tags=None):
     """Describe planned cluster mutations using a read-only server snapshot."""
     operations = []
+    final_assignments = copy.deepcopy(assignments)
     existing_users = {user['name']: copy.deepcopy(user) for user in current['minio_configuration_users']}
     existing_groups = {group['name']: copy.deepcopy(group) for group in current['minio_configuration_groups']}
     existing_buckets = {bucket['name']: bucket for bucket in current['minio_configuration_backets']}
@@ -69,8 +93,10 @@ def configuration_plan(current, assignments, users, groups, buckets, rules,
         desired = set(policy_names(owner, kind))
         for name in sorted(attached - desired):
             add('detach_policy', owner['name'], kind=kind, policy=name)
+            final_assignments[name] = [other for other in final_assignments.get(name, []) if other != identity]
         for name in sorted(desired - attached):
             add('attach_policy', owner['name'], kind=kind, policy=name)
+            final_assignments.setdefault(name, []).append(identity)
 
     if (full_run or 'backet' in selected) and 'backet' not in skipped:
         for bucket in buckets:
@@ -152,10 +178,18 @@ def configuration_plan(current, assignments, users, groups, buckets, rules,
         for user in users:
             if 'status' in user and user['status'] != existing_users[user['name']]['status']:
                 add('set_user_status', user['name'], status=user['status'])
+        removed_users = []
         if users_delete:
             desired_users = {user['name'] for user in users}
-            for name in sorted(set(existing_users) - desired_users - set(protected_users)):
+            removed_users = sorted(set(existing_users) - desired_users - set(protected_users))
+            for name in removed_users:
                 add('remove_user', name)
+                identity = {'kind': 'user', 'name': name}
+                for policy, owners in final_assignments.items():
+                    final_assignments[policy] = [owner for owner in owners if owner != identity]
+        candidates = obsolete_policy_candidates(assignments, rules, users, groups, removed_users)
+        for name in unused_policies(candidates, final_assignments):
+            add('remove_policy', name)
     return operations
 
 
@@ -176,6 +210,7 @@ def plan_summary(operations):
         'set_group_status': ('change', 'group'),
         'update_policy': ('change', 'policy'),
         'remove_user': ('delete', 'user'),
+        'remove_policy': ('delete', 'policy'),
         'detach_policy': ('delete', 'policy_assignment'),
         'remove_group_member': ('delete', 'group_member'),
     }
@@ -203,4 +238,6 @@ class FilterModule:
                 'minio_configuration_policy_names': policy_names,
                 'minio_configuration_plan': configuration_plan,
                 'minio_configuration_plan_summary': plan_summary,
-                'minio_configuration_plan_console': plan_console}
+                'minio_configuration_plan_console': plan_console,
+                'minio_configuration_obsolete_policy_candidates': obsolete_policy_candidates,
+                'minio_configuration_unused_policies': unused_policies}

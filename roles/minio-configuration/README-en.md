@@ -1,6 +1,6 @@
 # minio-configuration
 
-Role version: **3.8.0**.
+Role version: **3.9.0**.
 
 ## Run modes at a glance
 
@@ -154,7 +154,21 @@ path separators (`/`, `\`) or control characters. File permissions are `0600`.
 
 Direct attachments exactly match statements. Empty/omitted statements remove all
 direct policies. Changing a Sid detaches its old policy and creates a new one;
-unattached policy documents remain on the server. Permissions are defined through
+obsolete `policy-user-<name>-<Sid>` and `policy-grp-<name>-<Sid>` documents are
+removed from MinIO when no assignments remain after apply. Candidates come from
+the initial direct assignments of owners handled by this run; assignments are read
+again before deletion. Policies still assigned to other users/groups and policies
+outside these candidates are preserved. Read or deletion errors stop the role.
+
+Changing a username creates a new account and new owner policies with the same Sids.
+With `minio_configuration_users_delete: true`, the old account is removed unless
+protected, followed by its unused policies. Without that flag, the old account and
+its policies remain. The new account requires `secret_key`. Dry lists each document
+removal as `remove_policy` under planned removals. The same mechanism applies when
+a rule is removed or its Sid changes. A group policy remains while assigned to an
+existing group, including an empty group.
+
+Permissions are defined through
 each user or group's statements. Before configuration changes, the role reads
 all built-in direct assignments and refuses to update a generated policy attached
 to any other owner, including entities created outside the role. Foreign assignments
@@ -327,8 +341,8 @@ plans a password update for an existing user because its current value cannot be
 read for comparison. Passwords are replaced by `[REDACTED]`.
 Public `anonymous: download|upload|public` presets are listed as requested settings:
 the snapshot contains the policy document rather than the original preset name.
-Removing a policy assignment revokes its direct attachment, preserving the policy
-document on the server. Buckets are never removed.
+The plan distinguishes `detach_policy` (revoking a direct assignment) from
+`remove_policy` (deleting an unused policy document). Buckets are never removed.
 
 The same summary is saved **on the Ansible controller** to
 `minio_configuration_dry_report_path` (default `{{ playbook_dir }}/minio-plan.yml`).
@@ -380,6 +394,7 @@ Local tests from the repository root:
 
 ```bash
 python -m unittest discover -s roles/minio-configuration/tests -v
+ANSIBLE_ROLES_PATH=roles ansible-playbook -i roles/minio-configuration/tests/inventory.yml roles/minio-configuration/tests/policy-remove.yml
 ANSIBLE_ROLES_PATH=roles ansible-playbook -i roles/minio-configuration/tests/inventory.yml roles/minio-configuration/tests/export.yml -e minio_configuration_mode=export
 ANSIBLE_ROLES_PATH=roles ansible-playbook -i roles/minio-configuration/tests/inventory.yml roles/minio-configuration/tests/tags.yml --tags user
 ANSIBLE_ROLES_PATH=roles ansible-playbook -i roles/minio-configuration/tests/inventory.yml roles/minio-configuration/tests/dryrun.yml -e minio_configuration_mode=dry

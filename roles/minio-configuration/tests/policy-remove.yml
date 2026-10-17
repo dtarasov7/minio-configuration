@@ -1,0 +1,93 @@
+---
+- name: Verify dry and apply agree on obsolete owner policy deletion
+  hosts: minio_cluster
+  gather_facts: false
+  vars:
+    ansible_os_family: RedHat
+    minio_configuration_mc_binary_path: '{{ playbook_dir }}/policy_remove_mc.py'
+    minio_configuration_alias: production
+    minio_configuration_users: []
+    minio_configuration_backets: []
+    minio_configuration_groups: []
+    minio_configuration_users_delete: true
+    minio_configuration_protected_users: [keeper]
+    minio_configuration_dry_report_path: ''
+    state_path: '{{ playbook_dir }}/../../../.ansible/policy-remove-state.json'
+    sample_document:
+      Version: '2012-10-17'
+      Statement:
+        - Sid: Read
+          Effect: Allow
+          Action: ['s3:GetObject']
+          Resource: ['arn:aws:s3:::data/*']
+    shared_policy: false
+    initial_policies:
+      policy-user-old-One: '{{ sample_document }}'
+      policy-user-old-Two: '{{ sample_document }}'
+      policy-user-old-Three: '{{ sample_document }}'
+      policy-user-orphan-Keep: '{{ sample_document }}'
+      manual-keep: '{{ sample_document }}'
+    shared_assignments: ['policy-user-old-Three']
+  tasks:
+
+    - name: Prepare fixture directory
+      ansible.builtin.file:
+        path: '{{ playbook_dir }}/../../../.ansible'
+        state: directory
+        mode: '0700'
+      check_mode: false
+
+    - name: Seed read-only fixture with three owner policies and unrelated documents
+      ansible.builtin.copy:
+        content: >-
+          {{ {'read_only': true, 'commands': [], 'policies': initial_policies,
+              'users': {'old': {'policies': ['policy-user-old-One', 'policy-user-old-Two', 'policy-user-old-Three', 'manual-keep']},
+                        'keeper': {'policies': []}},
+              'groups': {'external': {'policies': shared_assignments if shared_policy | bool else []}}} | to_json }}
+        dest: '{{ state_path }}'
+        mode: '0600'
+      check_mode: false
+
+    - name: Execute actual dry tasks against the read-only fixture
+      ansible.builtin.include_role:
+        name: minio-configuration
+      vars:
+        minio_configuration_mode: dry
+
+    - name: Record dry policy deletions
+      ansible.builtin.set_fact:
+        expected_policy_deletions: '{{ minio_configuration_plan.delete | selectattr("type", "equalto", "policy") | map(attribute="name") | list | sort }}'
+        expected_removal_count: '{{ (2 if shared_policy | bool else 3) if minio_configuration_users_delete | bool else 0 }}'
+
+    - name: Verify the plan includes only obsolete unshared owner policies
+      ansible.builtin.assert:
+        that:
+          - expected_policy_deletions | length == expected_removal_count | int
+          - "'manual-keep' not in expected_policy_deletions"
+          - "'policy-user-orphan-Keep' not in expected_policy_deletions"
+
+    - name: Permit writes for the apply part of the fixture
+      ansible.builtin.copy:
+        content: '{{ lookup("file", state_path) | from_json | combine({"read_only": false}) | to_json }}'
+        dest: '{{ state_path }}'
+        mode: '0600'
+      check_mode: false
+
+    - name: Execute actual apply tasks
+      ansible.builtin.include_role:
+        name: minio-configuration
+      vars:
+        minio_configuration_mode: apply
+
+    - name: Read resulting fixture state
+      ansible.builtin.set_fact:
+        final_state: '{{ lookup("file", state_path) | from_json }}'
+
+    - name: Verify apply matches dry while check mode leaves the cluster unchanged
+      ansible.builtin.assert:
+        that:
+          - (initial_policies.keys() | difference(final_state.policies.keys()) | sort) == ([] if ansible_check_mode else expected_policy_deletions)
+          - ("old" in final_state.users) == (ansible_check_mode or not (minio_configuration_users_delete | bool))
+          - "'keeper' in final_state.users"
+          - final_state.groups.external.policies == (shared_assignments if shared_policy | bool else [])
+          - not ansible_check_mode or final_state.commands == []
