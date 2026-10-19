@@ -1,6 +1,6 @@
 # Роль `minio-configuration`
 
-Версия роли: **3.10.0**.
+Версия роли: **3.11.0**.
 
 ## Режимы запуска — кратко
 
@@ -9,8 +9,9 @@
 | Применить конфигурацию | `-e minio_configuration_mode=apply` (по умолчанию) |
 | Экспортировать текущую конфигурацию | `-e minio_configuration_mode=export` |
 | Посмотреть план без изменений | `-e minio_configuration_mode=dry` |
+| Построить матрицу прямых прав и анонимного доступа | `-e minio_configuration_mode=matrix` |
 
-Режим задаётся переменной `minio_configuration_mode`: `apply`, `dry` или `export`.
+Режим задаётся переменной `minio_configuration_mode`: `apply`, `dry`, `export` или `matrix`.
 Её можно определить в inventory (`group_vars`/`host_vars`) либо через `-e` при запуске.
 `--check` — независимый штатный режим Ansible, который можно добавить к любому режиму роли.
 Подробности и команды — в разделах ниже.
@@ -47,7 +48,7 @@ Alias должен быть доступен пользователю, от ко
 
 | Переменная | По умолчанию | Описание |
 |---|---|---|
-| `minio_configuration_mode` | `apply` | `apply` — применение, `dry` — план без изменений, `export` — выгрузка |
+| `minio_configuration_mode` | `apply` | `apply` — применение, `dry` — план без изменений, `export` — выгрузка, `matrix` — матрица прямых прав |
 | `minio_configuration_dry_report_path` | `{{ playbook_dir }}/minio-plan.yml` | YAML-сводка dry на контроллере; пустая строка отключает запись |
 | `minio_configuration_nodes_group` | `minio_cluster` | Группа узлов MinIO |
 | `minio_configuration_delegate_host` | первый узел группы | Хост, где выполняются команды `mc` |
@@ -58,6 +59,7 @@ Alias должен быть доступен пользователю, от ко
 | `minio_configuration_backets` | см. ниже | Desired-state бакетов |
 | `minio_configuration_users` | см. ниже | Desired-state пользователей |
 | `minio_configuration_export_path` | `{{ playbook_dir }}/minio-inventory.yml` | YAML-файл переменных на контроллере; родительский каталог должен существовать |
+| `minio_configuration_matrix_path` | `{{ playbook_dir }}/minio-access-matrix.csv` | CSV на controller; пояснения в `<путь>.notes.txt` |
 | `minio_configuration_policy_dir` | `/etc/minio/policies` | Каталог файлов политик на delegate-хосте |
 | `minio_configuration_no_log` | `true` | Скрывать задачи с паролями |
 | `minio_configuration_groups` | `[]` | Группы: `name`, необязательные `members`, `statements`, `status` (`enabled`/`disabled`) |
@@ -119,7 +121,7 @@ minio_configuration_users:
 Задачи файла `pre-req.yaml` и проверка существующего alias в `config` помечены `always` и выполняются
 при выборе рабочих тегов. `user` и `backet` также создают каталог политик, если нужны файлы политик. Вложенные проверки и задачи согласования получают необходимые теги.
 Теги выбирают этапы применения и соответствующие части плана в режиме `dry`.
-В режиме `export` выполняются проверки доступа и выгрузка; выбранные теги этапов не включают применение.
+В режимах `export` и `matrix` выполняются проверки доступа и формирование выбранного отчёта; теги этапов не включают применение и не сужают отчёт.
 
 ## Вывод Ansible
 
@@ -520,6 +522,67 @@ ansible-playbook -i inventory.ini roles/minio-configuration/examples/playbook.ym
 План отражает момент чтения: параллельные изменения и разрешения на запись могут повлиять на применение.
 Для выбора режима в inventory достаточно записи `minio_configuration_mode: dry`.
 
+## Матрица прав из текущего кластера
+
+```bash
+ANSIBLE_ROLES_PATH=roles ansible-playbook -i inventory.ini roles/minio-configuration/examples/playbook.yml -e minio_configuration_mode=matrix
+```
+
+Режим `matrix` читает существующие бакеты, встроенных пользователей и их прямые
+политики, а также JSON-политики анонимного доступа. Inventory не задаёт состав
+отчёта. Изменения в MinIO не выполняются. Используются существующие `mc`, alias
+и delegate. Теги этапов применения не сужают отчёт.
+
+На controller создаются `minio_configuration_matrix_path` и файл пояснений
+`<путь>.notes.txt`, оба с правами `0600`, в UTF-8 без BOM и с LF. Родительский каталог
+должен существовать. CSV использует запятую и стандартное экранирование кавычками.
+Колонки: `bucket`, `scope`, `resource`, `anonymous`, затем `user:<имя>` в порядке имён.
+Пользователи без прямых политик тоже включаются. Строки отсортированы по бакету,
+области и ресурсу. Для каждого бакета есть строки самого бакета (`scope=bucket`)
+и `bucket/*` (`scope=objects`); дополнительные строки формируются по ресурсам политик.
+Объекты не перечисляются.
+
+| Значение | Смысл в пределах модели отчёта |
+|---|---|
+| `L` | `s3:ListBucket` |
+| `R` | `s3:GetObject` |
+| `W` | `s3:PutObject` |
+| `D` | `s3:DeleteObject` |
+| `!R` | Явный запрет чтения; аналогично `!L`, `!W`, `!D` |
+| `R?` | Результат чтения неопределён или различается внутри области; аналогично L/W/D |
+| `—` | В рассмотренных правилах разрешений нет |
+| `DISABLED` | Пользователь отключён |
+
+Разрешения и запреты из прямых политик объединяются; применимый безусловный `Deny`
+имеет приоритет. Поддерживаются ARN конкретного бакета, точного объекта,
+`bucket/*`, `bucket/prefix/*`, а также `*` и `arn:aws:s3:::*` для существующих бакетов.
+Маски `Action` раскрываются только относительно L/R/W/D. Другие действия
+попадают в пояснения и не означают полный доступ. При разрешении `data/*` и запрете
+`data/private/*` общая строка показывает `R?`, отдельная строка `data/private/*` — `!R`.
+
+**Границы расчёта:** группы и их политики, влияние bucket policies на авторизованных
+пользователей, root, service accounts, STS, LDAP/OIDC и внешняя авторизация исключены.
+Колонка `anonymous` рассчитывается отдельно по публичному `Principal`: `"*"`,
+`{"AWS": "*"}` или `{"AWS": ["*"]}`. Публичные права не переносятся в колонки пользователей.
+`Condition` не вычисляется: условное правило исключается из безусловного расчёта,
+а затронутое действие отмечается `?`, если результат не определён безусловным запретом.
+`NotAction`, `NotResource`, другие формы Principal, переменные и сложные маски ресурсов
+также помечаются как неопределённость. Если область неизвестна, отметка распространяется
+на соответствующие действия пользователя во всех строках; анонимное правило ограничено своим бакетом.
+
+Пояснения содержат alias, UTC-интервал чтения, легенду, ограничения и сведения
+о пропущенных правилах: владелец, политика или бакет, индекс statement, исходный Sid,
+причина. Пароли и секретные ключи не читаются и не записываются. Ошибка чтения
+политики или некорректный JSON останавливает формирование отчёта.
+Чтение неатомарно: параллельные изменения могут повлиять на результат.
+Сам `mc admin user list` может запрашивать сведения о группах; роль их игнорирует
+и не выполняет отдельных команд групп для матрицы.
+
+Это ограниченная матрица прямых прав, а не полный аудит эффективного доступа.
+`—` не доказывает отсутствие доступа через исключённые механизмы. На экран выводятся
+размеры отчёта, число правил с ограничениями и пути файлов. С `--check` состояние
+читается и матрица рассчитывается, файлы не создаются и не перезаписываются.
+
 ## Штатный check mode Ansible
 
 `--check` не меняет `minio_configuration_mode`. Допустимы все сочетания:
@@ -528,6 +591,7 @@ ansible-playbook -i inventory.ini roles/minio-configuration/examples/playbook.ym
 ANSIBLE_ROLES_PATH=roles ansible-playbook -i inventory.ini roles/minio-configuration/examples/playbook.yml --check
 ANSIBLE_ROLES_PATH=roles ansible-playbook -i inventory.ini roles/minio-configuration/examples/playbook.yml -e minio_configuration_mode=dry --check
 ANSIBLE_ROLES_PATH=roles ansible-playbook -i inventory.ini roles/minio-configuration/examples/playbook.yml -e minio_configuration_mode=export --check
+ANSIBLE_ROLES_PATH=roles ansible-playbook -i inventory.ini roles/minio-configuration/examples/playbook.yml -e minio_configuration_mode=matrix --check
 ```
 
 Задачи выбранного действия выполняются согласно поддержке check mode их модулями.
@@ -539,6 +603,7 @@ ANSIBLE_ROLES_PATH=roles ansible-playbook -i inventory.ini roles/minio-configura
 
 ## Проверки
 
+Molecule проверяет также матрицу прямых прав и анонимного доступа после воспроизведения экспорта.
 Molecule использует четыре Docker-контейнера `redos:7.3.6` и роль `minio-cluster`.
 Сценарий проверяет изменение конфигурации, удаление пользователей, сохранение бакетов и данных, чтение/запись, запрет записи для пользователя с правом только чтения, анонимное чтение
 без списка, маски объектов и бакетов, запрет создания бакетов и экспорт с повторным
@@ -553,6 +618,9 @@ molecule test
 
 ```bash
 python -m unittest discover -s roles/minio-configuration/tests -v
+ANSIBLE_ROLES_PATH=roles ansible-playbook -i roles/minio-configuration/tests/inventory.yml roles/minio-configuration/tests/matrix.yml
+ANSIBLE_ROLES_PATH=roles ansible-playbook -i roles/minio-configuration/tests/inventory.yml roles/minio-configuration/tests/matrix.yml --check
+ANSIBLE_ROLES_PATH=roles ansible-playbook -i roles/minio-configuration/tests/inventory.yml roles/minio-configuration/tests/matrix.yml --tags user
 ANSIBLE_ROLES_PATH=roles ansible-playbook -i roles/minio-configuration/tests/inventory.yml roles/minio-configuration/tests/policy-remove.yml
 ANSIBLE_ROLES_PATH=roles ansible-playbook -i roles/minio-configuration/tests/inventory.yml roles/minio-configuration/tests/export.yml -e minio_configuration_mode=export
 ANSIBLE_ROLES_PATH=roles ansible-playbook -i roles/minio-configuration/tests/inventory.yml roles/minio-configuration/tests/tags.yml --tags user

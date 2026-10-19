@@ -225,3 +225,5 @@
   - name: converge.yml - apply exported desired state
     ansible.builtin.include_role:
       name: minio-configuration
+
+- ansible.builtin.import_playbook: matrix.yml

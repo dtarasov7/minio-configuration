@@ -1,0 +1,50 @@
+---
+
+- name: matrix.yaml - validate controller report path
+  ansible.builtin.assert:
+    quiet: true
+    that:
+      - minio_configuration_matrix_path is string
+      - minio_configuration_matrix_path | length > 0
+    fail_msg: minio_configuration_matrix_path must be a nonempty controller file path.
+  run_once: true
+
+- name: matrix.yaml - read direct user and anonymous policies
+  minio_configuration_snapshot:
+    binary: "{{ minio_configuration_mc_binary_path }}"
+    alias: "{{ minio_configuration_alias }}"
+    operation: matrix
+  register: minio_configuration_matrix_snapshot
+  check_mode: false
+  run_once: true
+  delegate_to: "{{ minio_configuration_delegate_host }}"
+
+- name: matrix.yaml - calculate access matrix
+  ansible.builtin.set_fact:
+    minio_configuration_matrix_report: "{{ minio_configuration_matrix_snapshot.configuration | minio_configuration_access_matrix }}"
+  run_once: true
+
+- name: matrix.yaml - write access matrix on controller
+  ansible.builtin.copy:
+    content: "{{ minio_configuration_matrix_report.csv }}"
+    dest: "{{ minio_configuration_matrix_path }}"
+    mode: '0600'
+  become: false
+  delegate_to: localhost
+  run_once: true
+
+- name: matrix.yaml - write matrix explanations on controller
+  ansible.builtin.copy:
+    content: "{{ minio_configuration_matrix_report.notes }}"
+    dest: "{{ minio_configuration_matrix_path }}.notes.txt"
+    mode: '0600'
+  become: false
+  delegate_to: localhost
+  run_once: true
+
+- name: matrix.yaml - show matrix summary
+  ansible.builtin.debug:
+    msg:
+      - "Матрица рассчитана: пользователей {{ minio_configuration_matrix_report.user_count }}, строк {{ minio_configuration_matrix_report.row_count }}, правил с ограничениями {{ minio_configuration_matrix_report.warning_count }}."
+      - "{{ 'Планируемые файлы (--check)' if ansible_check_mode else 'Файлы' }}: {{ minio_configuration_matrix_path }}, {{ minio_configuration_matrix_path }}.notes.txt"
+  run_once: true

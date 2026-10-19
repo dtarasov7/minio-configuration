@@ -31,6 +31,16 @@
   tags:
     - always
 
+- name: main.yaml - report current direct user and anonymous access
+  ansible.builtin.include_tasks:
+    file: matrix.yaml
+    apply:
+      tags:
+        - always
+  when: minio_configuration_mode == 'matrix'
+  tags:
+    - always
+
 - name: main.yaml - verify exclusive ownership of rule policies
   ansible.builtin.include_tasks:
     file: policy-guard.yaml

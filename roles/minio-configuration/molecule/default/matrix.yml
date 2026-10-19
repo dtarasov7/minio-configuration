@@ -1,0 +1,35 @@
+---
+- name: Report direct and anonymous access after inventory replay
+  hosts: minio_cluster
+  become: false
+  vars:
+    minio_configuration_mode: matrix
+    minio_configuration_alias: production
+    minio_configuration_matrix_path: "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/minio-access-matrix.csv"
+  roles:
+    - role: minio-configuration
+  tasks:
+
+    - name: matrix.yml - verify matrix against known direct and anonymous policies
+      ansible.builtin.command:
+        argv:
+          - "{{ ansible_playbook_python }}"
+          - -c
+          - |
+            import csv
+            from pathlib import Path
+            import sys
+            path = Path(sys.argv[1])
+            with path.open(encoding='utf-8', newline='') as stream:
+                rows = {row['resource']: row for row in csv.DictReader(stream)}
+            assert rows['b-download/*']['anonymous'] == 'R'
+            assert 'W' in rows['b-upload/*']['anonymous'].split()
+            assert rows['b-test-c/*']['user:u_group_reader'] == '—'
+            assert rows['b-test-b/*']['user:u_test_rw'] == 'R W D'
+            assert path.stat().st_mode & 0o777 == 0o600
+            notes = Path(str(path) + '.notes.txt')
+            assert notes.stat().st_mode & 0o777 == 0o600
+          - "{{ minio_configuration_matrix_path }}"
+      delegate_to: localhost
+      run_once: true
+      changed_when: false

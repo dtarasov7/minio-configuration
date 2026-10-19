@@ -1,6 +1,6 @@
 # minio-configuration
 
-Role version: **3.10.0**.
+Role version: **3.11.0**.
 
 ## Run modes at a glance
 
@@ -9,8 +9,9 @@ Role version: **3.10.0**.
 | Apply configuration | `-e minio_configuration_mode=apply` (default) |
 | Export current configuration | `-e minio_configuration_mode=export` |
 | Preview operations without changes | `-e minio_configuration_mode=dry` |
+| Report direct user and anonymous access | `-e minio_configuration_mode=matrix` |
 
-Set `minio_configuration_mode` to `apply`, `dry` or `export` in inventory
+Set `minio_configuration_mode` to `apply`, `dry`, `export` or `matrix` in inventory
 (`group_vars`/`host_vars`) or through `-e` on the command line. Native Ansible `--check`
 is independent and can be combined with any role mode. Detailed commands appear below.
 
@@ -36,7 +37,7 @@ accounts to `minio_configuration_protected_users` when deletion is enabled.
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `minio_configuration_mode` | `apply` | `apply`, `dry` or `export` |
+| `minio_configuration_mode` | `apply` | `apply`, `dry`, `export` or `matrix` |
 | `minio_configuration_dry_report_path` | `{{ playbook_dir }}/minio-plan.yml` | Controller-side dry summary; empty string disables saving |
 | `minio_configuration_nodes_group` | `minio_cluster` | Inventory group |
 | `minio_configuration_delegate_host` | First group member | Host running `mc` |
@@ -48,6 +49,7 @@ accounts to `minio_configuration_protected_users` when deletion is enabled.
 | `minio_configuration_users_delete` | `false` | Delete undeclared users |
 | `minio_configuration_protected_users` | `[minioadmin, minio_prometheus]` | Excluded from automatic deletion |
 | `minio_configuration_export_path` | `{{ playbook_dir }}/minio-inventory.yml` | Controller YAML variables file; parent directory must exist |
+| `minio_configuration_matrix_path` | `{{ playbook_dir }}/minio-access-matrix.csv` | Controller CSV; explanations at `<path>.notes.txt` |
 | `minio_configuration_no_log` | `true` | Hide tasks containing passwords |
 | `minio_configuration_policy_dir` | `/etc/minio/policies` | Policy files on delegate host |
 | `minio_configuration_groups` | `[]` | Groups: `name`, optional `members`, `statements`, `status` |
@@ -382,6 +384,63 @@ Without tags, dry mode prints the complete plan; `--skip-tags` excludes selected
 The plan is a snapshot: concurrent changes and server-side write authorization may affect apply.
 To select this mode in inventory, set `minio_configuration_mode: dry`.
 
+## Access matrix from the current cluster
+
+```bash
+ANSIBLE_ROLES_PATH=roles ansible-playbook -i inventory.yml roles/minio-configuration/examples/playbook.yml -e minio_configuration_mode=matrix
+```
+
+`matrix` reads existing buckets, built-in users, their directly assigned policies
+and anonymous bucket policies. Inventory declarations do not select report subjects.
+It uses the installed client, configured alias and delegate without changing MinIO.
+Apply stage tags do not narrow the report.
+
+The controller receives `minio_configuration_matrix_path` and `<path>.notes.txt`,
+both mode `0600`, UTF-8 without BOM, LF. The parent directory must exist. CSV uses
+commas and standard quoting. Columns are `bucket`, `scope`, `resource`, `anonymous`,
+then sorted `user:<name>` columns, including users with no direct policy. Rows are
+sorted by bucket, scope and resource. Every bucket has a bucket row and an object
+row (`bucket/*`); policy resources add narrower rows. No objects are listed.
+
+| Value | Meaning within the report model |
+|---|---|
+| `L` | `s3:ListBucket` |
+| `R` | `s3:GetObject` |
+| `W` | `s3:PutObject` |
+| `D` | `s3:DeleteObject` |
+| `!R` | Explicit read denial; likewise `!L`, `!W`, `!D` |
+| `R?` | Unknown or mixed read decision within this area; likewise L/W/D |
+| `—` | No permission in the evaluated rules |
+| `DISABLED` | Disabled user |
+
+Direct policies are combined; applicable unconditional Deny overrides Allow.
+Supported resources are concrete bucket/object ARNs, `bucket/*`, `bucket/prefix/*`,
+`*` and `arn:aws:s3:::*` over existing buckets. Action masks expand only against
+L/R/W/D. Other actions are noted and never imply full access. Allow on `data/*`
+plus Deny on `data/private/*` produces `R?` on the broad row and `!R` on the narrower row.
+
+**Calculation boundaries:** groups, bucket-policy effects on authenticated users,
+root, service accounts, STS, LDAP/OIDC and external authorization are excluded.
+Anonymous access is evaluated separately for public Principal forms `"*"`,
+`{"AWS": "*"}` and `{"AWS": ["*"]}`; it is not copied into user columns.
+Conditions are not evaluated. Conditional statements are excluded from unconditional
+decisions and affected actions show `?` unless an unconditional Deny settles them.
+NotAction, NotResource, other Principal forms, resource variables and complex masks
+also produce uncertainty. Unknown resource scope affects the corresponding user's
+actions across all rows; anonymous statements remain limited to their own bucket.
+
+The notes file records the alias, UTC collection interval, legend, limitations and
+skipped rules with subject, policy/bucket, statement index, original Sid and reason.
+Passwords and secret keys are neither read nor written. Read errors and malformed
+JSON stop report generation. Collection is not atomic and concurrent changes may
+affect results. The client itself may fetch group details during `admin user list`;
+the role ignores them and issues no separate group commands for the matrix.
+
+This is a limited direct-access report, not a complete effective-access audit.
+`—` does not prove that access through excluded mechanisms is absent. Console output
+contains counts and file paths only. With `--check`, collection and calculation
+run, while report files are neither created nor overwritten.
+
 ## Native Ansible check mode
 
 `--check` does not change `minio_configuration_mode`. Every combination is supported:
@@ -390,6 +449,7 @@ To select this mode in inventory, set `minio_configuration_mode: dry`.
 ANSIBLE_ROLES_PATH=roles ansible-playbook -i inventory.yml roles/minio-configuration/examples/playbook.yml --check
 ANSIBLE_ROLES_PATH=roles ansible-playbook -i inventory.yml roles/minio-configuration/examples/playbook.yml -e minio_configuration_mode=dry --check
 ANSIBLE_ROLES_PATH=roles ansible-playbook -i inventory.yml roles/minio-configuration/examples/playbook.yml -e minio_configuration_mode=export --check
+ANSIBLE_ROLES_PATH=roles ansible-playbook -i inventory.yml roles/minio-configuration/examples/playbook.yml -e minio_configuration_mode=matrix --check
 ```
 
 The selected action's modules follow their native check-mode behavior. For a normal
@@ -404,18 +464,21 @@ Tags: `install`, `config`, `backet`, `user` and `ssl`.
 Preflight and existing alias checks use
 `always` and run with each operational tag. `install` only prepares the policy directory;
 `user` and `backet` also prepare it when policy files are needed. Nested validation and reconciliation tasks receive the required tags.
-Tags select apply stages and corresponding plan sections in dry mode. Export mode
-runs access checks and export regardless of the selected stage tags.
+Tags select apply stages and corresponding plan sections in dry mode. Export and matrix modes
+run access checks and their complete report regardless of the selected stage tags.
 
 Molecule uses four prebuilt `redos:7.3.6` Docker containers and `minio-cluster`.
 It covers configuration changes, user deletion, bucket/data preservation, read/write restrictions, granular access, anonymous presets,
-explicit bucket-creation denial, dryrun without side effects and export/replay. Run `molecule test` from the
+explicit bucket-creation denial, dryrun without side effects, export/replay and direct/anonymous access matrices. Run `molecule test` from the
 role directory with images and dependencies available.
 
 Local tests from the repository root:
 
 ```bash
 python -m unittest discover -s roles/minio-configuration/tests -v
+ANSIBLE_ROLES_PATH=roles ansible-playbook -i roles/minio-configuration/tests/inventory.yml roles/minio-configuration/tests/matrix.yml
+ANSIBLE_ROLES_PATH=roles ansible-playbook -i roles/minio-configuration/tests/inventory.yml roles/minio-configuration/tests/matrix.yml --check
+ANSIBLE_ROLES_PATH=roles ansible-playbook -i roles/minio-configuration/tests/inventory.yml roles/minio-configuration/tests/matrix.yml --tags user
 ANSIBLE_ROLES_PATH=roles ansible-playbook -i roles/minio-configuration/tests/inventory.yml roles/minio-configuration/tests/policy-remove.yml
 ANSIBLE_ROLES_PATH=roles ansible-playbook -i roles/minio-configuration/tests/inventory.yml roles/minio-configuration/tests/export.yml -e minio_configuration_mode=export
 ANSIBLE_ROLES_PATH=roles ansible-playbook -i roles/minio-configuration/tests/inventory.yml roles/minio-configuration/tests/tags.yml --tags user

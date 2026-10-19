@@ -51,6 +51,7 @@ minio_configuration_protected_users:
   - "{{ minio_configuration_metrics_user }}"
 
 minio_configuration_export_path: "{{ playbook_dir }}/minio-inventory.yml"
+minio_configuration_matrix_path: "{{ playbook_dir }}/minio-access-matrix.csv"
 minio_configuration_no_log: true
 minio_configuration_groups: []
 minio_configuration_hashi_vault_path_password: ''

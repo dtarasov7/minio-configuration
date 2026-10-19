@@ -4,8 +4,8 @@
   ansible.builtin.assert:
     quiet: true
     that:
-      - minio_configuration_mode in ['apply', 'dry', 'export']
-    fail_msg: 'minio_configuration_mode must be apply, dry or export.'
+      - minio_configuration_mode in ['apply', 'dry', 'export', 'matrix']
+    fail_msg: 'minio_configuration_mode must be apply, dry, export or matrix.'
   run_once: true
 
 - name: pre-req.yaml - verify supported operating system

@@ -1,5 +1,13 @@
 # Changes
 
+## 3.11.0 — 2026-10-19
+
+- Added `matrix` mode: a controller CSV of direct built-in user and anonymous access from the current cluster, without changing MinIO.
+- Supports L/R/W/D, unconditional Allow/Deny, concrete buckets, objects and prefixes; conditions, unsupported rules and mixed resource areas are explicitly marked uncertain.
+- Group permissions are excluded; a dedicated collector preserves direct policy names and Sids without listing objects or reading versioning.
+- CSV and explanations use mode 0600; native `--check` calculates the report without writing files.
+- Added unit, local Ansible and Molecule matrix checks and updated both READMEs.
+
 ## 3.10.0 — 2026-10-17
 
 - `versioning: false` preserves the initial Unversioned state of a new bucket; `mc version suspend` is only called when versioning is enabled.

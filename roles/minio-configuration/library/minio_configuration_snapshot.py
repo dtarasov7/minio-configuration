@@ -1,6 +1,7 @@
 #!/usr/bin/python
 """Read bucket policies and built-in IAM configuration through mc, without writes."""
 import copy
+from datetime import datetime, timezone
 import hashlib
 import json
 import re
@@ -22,9 +23,9 @@ options:
     type: str
     default: local
   operation:
-    description: Export desired state or read direct policy ownership assignments.
+    description: Export desired state, list buckets, read policy ownership or collect direct access matrix data.
     type: str
-    choices: [snapshot, assignments]
+    choices: [snapshot, assignments, bucket_names, matrix]
     default: snapshot
 attributes:
   check_mode:
@@ -188,14 +189,48 @@ class Snapshot:
                 assignments.setdefault(policy, []).append({'kind': 'grp', 'name': name})
         return assignments
 
+    def collect_matrix(self):
+        started = datetime.now(timezone.utc).isoformat()
+        buckets = []
+        for name in sorted(self.bucket_names()):
+            response = self.one('anonymous', 'get-json', self.alias + '/' + name)
+            document = response.get('anonymous')
+            if not document and response.get('permission') in ('private', 'none'):
+                document = {'Statement': []}
+            if not isinstance(document, dict) or 'Statement' not in document:
+                raise ValueError('Missing anonymous policy for bucket ' + name)
+            buckets.append({'name': name, 'policy': document})
+
+        users = []
+        names = set()
+        for record in self.read('admin', 'user', 'list', self.alias):
+            name = record['accessKey']
+            status = record['userStatus']
+            if status not in ('enabled', 'disabled'):
+                raise ValueError('Unknown user status: ' + status)
+            attached = policy_names(record.get('policyName', ''))
+            names.update(attached)
+            users.append({'name': name, 'status': status, 'policies': attached})
+        documents = {}
+        for name in sorted(names):
+            response = self.one('admin', 'policy', 'info', self.alias, name)
+            documents[name] = policy_document(response)
+        return {'alias': self.alias, 'started_at': started,
+                'finished_at': datetime.now(timezone.utc).isoformat(),
+                'buckets': buckets, 'users': sorted(users, key=lambda user: user['name']),
+                'policies': documents}
+
 
 def main():
     module = AnsibleModule(argument_spec={'binary': {'type': 'path', 'required': True},
                                          'alias': {'type': 'str', 'default': 'local'},
-                                         'operation': {'type': 'str', 'choices': ['snapshot', 'assignments', 'bucket_names'], 'default': 'snapshot'}},
+                                         'operation': {'type': 'str', 'choices': ['snapshot', 'assignments', 'bucket_names', 'matrix'], 'default': 'snapshot'}},
                            supports_check_mode=True)
     snapshot = Snapshot(module)
     try:
+        if module.params['operation'] == 'matrix':
+            configuration = snapshot.collect_matrix()
+            module.exit_json(changed=False, configuration=configuration)
         if module.params['operation'] == 'bucket_names':
             names = snapshot.bucket_names()
             module.exit_json(changed=False, bucket_names=names)

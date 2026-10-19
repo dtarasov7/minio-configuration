@@ -1,0 +1,64 @@
+---
+- name: Verify current cluster matrix and native check using read-only fixture
+  hosts: minio_cluster
+  gather_facts: false
+  vars:
+    ansible_os_family: RedHat
+    minio_configuration_mode: matrix
+    minio_configuration_alias: production
+    minio_configuration_mc_binary_path: "{{ playbook_dir }}/matrix_mc.py"
+    minio_configuration_matrix_path: "{{ playbook_dir }}/../../../.ansible/matrix-{{ 'check' if ansible_check_mode else 'apply' }}.csv"
+    # Matrix must not validate or apply inventory declarations.
+    minio_configuration_users: [{invalid: true}]
+    minio_configuration_groups: [{invalid: true}]
+    minio_configuration_backets: [{invalid: true}]
+    minio_configuration_users_delete: true
+  pre_tasks:
+
+    - name: Remove previous report artifacts and command log
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "{{ minio_configuration_matrix_path }}"
+        - "{{ minio_configuration_matrix_path }}.notes.txt"
+        - "{{ playbook_dir }}/../../../.ansible/matrix-commands.jsonl"
+      check_mode: false
+      tags: always
+  roles:
+    - minio-configuration
+  tasks:
+
+    - name: Inspect matrix output
+      ansible.builtin.stat:
+        path: "{{ minio_configuration_matrix_path }}"
+      register: matrix_file
+      tags: always
+
+    - name: Inspect explanations output
+      ansible.builtin.stat:
+        path: "{{ minio_configuration_matrix_path }}.notes.txt"
+      register: matrix_notes_file
+      tags: always
+
+    - name: Verify calculated contents and file permissions
+      ansible.builtin.assert:
+        that:
+          - minio_configuration_matrix_report.csv == 'bucket,scope,resource,anonymous,user:group-only,user:off,user:reader' ~ '\n' ~ 'data,bucket,data,—,—,DISABLED,—' ~ '\n' ~ 'data,objects,data/*,R,—,DISABLED,R' ~ '\n'
+          - minio_configuration_matrix_report.user_count == 3
+          - minio_configuration_matrix_report.row_count == 2
+          - matrix_file.stat.exists == (not ansible_check_mode)
+          - matrix_notes_file.stat.exists == (not ansible_check_mode)
+          - ansible_check_mode or matrix_file.stat.mode == '0600'
+          - ansible_check_mode or matrix_notes_file.stat.mode == '0600'
+          - minio_configuration_plan is not defined
+          - minio_configuration_policy_assignments is not defined
+      tags: always
+
+    - name: Verify saved report and exact read command sequence
+      ansible.builtin.assert:
+        that:
+          - ansible_check_mode or lookup('file', minio_configuration_matrix_path, rstrip=false) == minio_configuration_matrix_report.csv
+          - ansible_check_mode or lookup('file', minio_configuration_matrix_path ~ '.notes.txt', rstrip=false) == minio_configuration_matrix_report.notes
+          - lookup('file', playbook_dir ~ '/../../../.ansible/matrix-commands.jsonl').splitlines() | map('from_json') | list == [['--json', 'ls', 'production'], ['--json', 'anonymous', 'get-json', 'production/data'], ['--json', 'admin', 'user', 'list', 'production'], ['--json', 'admin', 'policy', 'info', 'production', 'read']]
+      tags: always
