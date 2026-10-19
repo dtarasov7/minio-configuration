@@ -44,9 +44,9 @@
     - name: Verify calculated contents and file permissions
       ansible.builtin.assert:
         that:
-          - minio_configuration_matrix_report.csv == 'bucket,scope,resource,anonymous,user:group-only,user:off,user:reader' ~ '\n' ~ 'data,bucket,data,—,—,DISABLED,—' ~ '\n' ~ 'data,objects,data/*,R,—,DISABLED,R' ~ '\n'
-          - minio_configuration_matrix_report.user_count == 3
-          - minio_configuration_matrix_report.row_count == 2
+          - minio_configuration_matrix_report.csv == 'bucket;scope;resource;anonymous;u:group-only;u:off;u:reader;u:simple' ~ '\n' ~ 'data;objects;data/*;-  R  -  -;-  -  -  -;DISABLED;L  R  -  -;-  -  -  -' ~ '\n' ~ 'data;objects;data/reports*;-  r  -  -;-  -  -  -;DISABLED;l  R  W  D;-  -  -  -' ~ '\n' ~ 'other;objects;other/*;-  -  -  -;-  -  -  -;DISABLED;-  -  -  -;-  R  -  -' ~ '\n' ~ 'other;objects;other/allowed/*;-  -  -  -;-  -  -  -;DISABLED;-  -  -  -;L  r  -  -' ~ '\n'
+          - minio_configuration_matrix_report.user_count == 4
+          - minio_configuration_matrix_report.row_count == 4
           - matrix_file.stat.exists == (not ansible_check_mode)
           - matrix_notes_file.stat.exists == (not ansible_check_mode)
           - ansible_check_mode or matrix_file.stat.mode == '0600'
@@ -60,5 +60,5 @@
         that:
           - ansible_check_mode or lookup('file', minio_configuration_matrix_path, rstrip=false) == minio_configuration_matrix_report.csv
           - ansible_check_mode or lookup('file', minio_configuration_matrix_path ~ '.notes.txt', rstrip=false) == minio_configuration_matrix_report.notes
-          - lookup('file', playbook_dir ~ '/../../../.ansible/matrix-commands.jsonl').splitlines() | map('from_json') | list == [['--json', 'ls', 'production'], ['--json', 'anonymous', 'get-json', 'production/data'], ['--json', 'admin', 'user', 'list', 'production'], ['--json', 'admin', 'policy', 'info', 'production', 'read']]
+          - lookup('file', playbook_dir ~ '/../../../.ansible/matrix-commands.jsonl').splitlines() | map('from_json') | list == [['--json', 'ls', 'production'], ['--json', 'anonymous', 'get-json', 'production/data'], ['--json', 'anonymous', 'get-json', 'production/other'], ['--json', 'admin', 'user', 'list', 'production'], ['--json', 'admin', 'policy', 'info', 'production', 'prefix'], ['--json', 'admin', 'policy', 'info', 'production', 'read'], ['--json', 'admin', 'policy', 'info', 'production', 'simple']]
       tags: always

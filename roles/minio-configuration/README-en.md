@@ -1,6 +1,6 @@
 # minio-configuration
 
-Role version: **3.11.0**.
+Role version: **3.12.2**.
 
 ## Run modes at a glance
 
@@ -397,10 +397,13 @@ Apply stage tags do not narrow the report.
 
 The controller receives `minio_configuration_matrix_path` and `<path>.notes.txt`,
 both mode `0600`, UTF-8 without BOM, LF. The parent directory must exist. CSV uses
-commas and standard quoting. Columns are `bucket`, `scope`, `resource`, `anonymous`,
-then sorted `user:<name>` columns, including users with no direct policy. Rows are
-sorted by bucket, scope and resource. Every bucket has a bucket row and an object
-row (`bucket/*`); policy resources add narrower rows. No objects are listed.
+semicolons (`;`) and standard quoting. Columns are `bucket`, `scope`, `resource`, `anonymous`,
+then sorted `u:<name>` columns, including users with no direct policy. Rows are
+sorted by bucket, scope and resource. Every bucket has an object row (`bucket/*`);
+policy resources add narrower rows. There is no separate bucket-name row.
+ListBucket is evaluated against the bucket ARN and displayed in the L slot of all
+its object rows, subject to supported prefix conditions. An object ARN never grants ListBucket, even with `Action: "*"`.
+No objects are listed.
 
 | Value | Meaning within the report model |
 |---|---|
@@ -408,36 +411,78 @@ row (`bucket/*`); policy resources add narrower rows. No objects are listed.
 | `R` | `s3:GetObject` |
 | `W` | `s3:PutObject` |
 | `D` | `s3:DeleteObject` |
-| `!R` | Explicit read denial; likewise `!L`, `!W`, `!D` |
-| `R?` | Unknown or mixed read decision within this area; likewise L/W/D |
-| `—` | No permission in the evaluated rules |
+| `l r w d` | The same actions allowed by a broader resource rule |
+| `!R` / `!r` | Denial on this row / from a broader range; likewise L/W/D |
+| `?` | Calculation is unknown for the action in this fixed L/R/W/D slot |
+| `-` | No permission in this slot |
 | `DISABLED` | Disabled user |
+
+Uppercase L/R/W/D indicates a rule for the row's own resource range; lowercase
+l/r/w/d indicates a broader matching rule. A read rule on `lab-other/*` shows R
+there and r on `lab-other/other/*`. If both explicit and broader Allow rules cover
+the action, uppercase wins. Global resources `*` and `arn:aws:s3:::*` produce
+lowercase on concrete bucket rows; anonymous global resources remain bounded by
+their own bucket policy.
+
+Unconditional ListBucket on a concrete bucket ARN shows L on `bucket/*` and l on
+narrower rows. With a supported s3:prefix condition, its exact range shows L and
+narrower rows show l. Deny case follows the winning Deny rules: !R on their own
+range, !r below it. Deny still overrides Allow regardless of case. This describes
+resource scope, not group-policy inheritance.
+
+Each row shows rules covering its entire range. Narrower grants and denials appear
+in their own rows without adding markers to the broader row. Consult narrower rows
+for overrides before judging access to a concrete object: broad R can coexist with
+!R on a specific prefix. A standalone ? in a fixed slot means an unknown calculation due to unsupported
+rules only; for example, `-  ?  -  -` means unknown R; an applicable whole-row Deny takes precedence and appears as !R.
+
+Every cell has four fixed L/R/W/D slots: `-  -  -  D`, `-  R  W  D`, `L  R  -  -`.
+Each slot is two characters wide and separated by a space; trailing spaces are
+removed. A missing permission is `-`, so D retains its position when R/W are absent.
+Use a monospace font for visual alignment.
 
 Direct policies are combined; applicable unconditional Deny overrides Allow.
 Supported resources are concrete bucket/object ARNs, `bucket/*`, `bucket/prefix/*`,
-`*` and `arn:aws:s3:::*` over existing buckets. Action masks expand only against
+`bucket/prefix*`, `*` and `arn:aws:s3:::*` over existing buckets. Action masks expand only against
 L/R/W/D. Other actions are noted and never imply full access. Allow on `data/*`
-plus Deny on `data/private/*` produces `R?` on the broad row and `!R` on the narrower row.
+plus Deny on `data/private/*` leaves `R` on the broad row and `!R` on the narrower row.
 
 **Calculation boundaries:** groups, bucket-policy effects on authenticated users,
 root, service accounts, STS, LDAP/OIDC and external authorization are excluded.
 Anonymous access is evaluated separately for public Principal forms `"*"`,
 `{"AWS": "*"}` and `{"AWS": ["*"]}`; it is not copied into user columns.
-Conditions are not evaluated. Conditional statements are excluded from unconditional
-decisions and affected actions show `?` unless an unconditional Deny settles them.
+For ListBucket, Condition supports StringLike and StringEquals on s3:prefix.
+Values may be strings or lists; values combine with OR and operators with AND.
+Literal prefixes and a single trailing * for StringLike are supported; variables
+and complex masks remain unknown. Supported conditions add prefix rows even when
+there is no corresponding object policy.
+
+For example, StringLike on `other/*` grants L on `lab-other/other/*` and produces
+no L on `lab-other/*` from that rule: the restricted grant appears only on its own prefix row.
+L describes listing requests whose prefixes lie in the row's range. StringEquals
+on `other/` permits only that exact prefix request: its exact row shows L, the
+`other/*` range and deeper concrete prefixes receive no L from that rule.
+The permitted `other/` listing can still return nested objects: the condition
+restricts the request, not the response contents. Conditional Deny applies within
+its range and overrides Allow.
+
+Other conditions (IP, TLS, time, negative operators or additional keys) remain
+unknown and produce ?. For object R/W/D actions, s3:prefix also remains unknown.
+ListBucketVersions is passed to MinIO by apply but has no separate matrix symbol.
 NotAction, NotResource, other Principal forms, resource variables and complex masks
-also produce uncertainty. Unknown resource scope affects the corresponding user's
-actions across all rows; anonymous statements remain limited to their own bucket.
+also produce uncertainty. Unsupported object masks affect only their identifiable
+bucket; bucket-name masks affect matching buckets. Global uncertainty is reserved
+for unknown buckets or NotResource. Anonymous statements remain limited to their own bucket.
 
 The notes file records the alias, UTC collection interval, legend, limitations and
-skipped rules with subject, policy/bucket, statement index, original Sid and reason.
+skipped rules with subject, policy/bucket, statement index, original Sid, Action/Resource (including negative forms) and reason.
 Passwords and secret keys are neither read nor written. Read errors and malformed
 JSON stop report generation. Collection is not atomic and concurrent changes may
 affect results. The client itself may fetch group details during `admin user list`;
 the role ignores them and issues no separate group commands for the matrix.
 
 This is a limited direct-access report, not a complete effective-access audit.
-`—` does not prove that access through excluded mechanisms is absent. Console output
+`-` does not prove that access through excluded mechanisms is absent. Console output
 contains counts and file paths only. With `--check`, collection and calculation
 run, while report files are neither created nor overwritten.
 

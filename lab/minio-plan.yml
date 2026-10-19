@@ -1,0 +1,196 @@
+add:
+-   type: bucket
+    name: lab-data
+    action: create_bucket
+    versioning: false
+-   type: bucket
+    name: lab-other
+    action: create_bucket
+    versioning: false
+-   type: bucket
+    name: lab-public
+    action: create_bucket
+    versioning: false
+-   type: user
+    name: lab-reader
+    action: create_user
+    secret_key: '[REDACTED]'
+-   type: user
+    name: lab-test
+    action: create_user
+    secret_key: '[REDACTED]'
+-   type: user
+    name: lab-prefix-writer
+    action: create_user
+    secret_key: '[REDACTED]'
+-   type: user
+    name: lab-delete-only
+    action: create_user
+    secret_key: '[REDACTED]'
+-   type: policy
+    name: policy-user-lab-reader-ListOther
+    action: create_policy
+    owner_type: user
+    owner: lab-reader
+    document:
+        Version: '2012-10-17'
+        Statement:
+        -   Sid: ListOther
+            Effect: Allow
+            Action:
+            - s3:ListBucket
+            Resource:
+            - arn:aws:s3:::lab-other
+-   type: policy
+    name: policy-user-lab-reader-ReadOther
+    action: create_policy
+    owner_type: user
+    owner: lab-reader
+    document:
+        Version: '2012-10-17'
+        Statement:
+        -   Sid: ReadOther
+            Effect: Allow
+            Action:
+            - s3:GetObject
+            Resource:
+            - arn:aws:s3:::lab-other/*
+-   type: policy
+    name: policy-user-lab-test-ReadOnly
+    action: create_policy
+    owner_type: user
+    owner: lab-test
+    document:
+        Version: '2012-10-17'
+        Statement:
+        -   Sid: ReadOnly
+            Effect: Allow
+            Action:
+            - s3:GetObject
+            Resource:
+            - arn:aws:s3:::lab-other/*
+-   type: policy
+    name: policy-user-lab-test-ManageAll
+    action: create_policy
+    owner_type: user
+    owner: lab-test
+    document:
+        Version: '2012-10-17'
+        Statement:
+        -   Sid: ManageAll
+            Effect: Allow
+            Action:
+            - s3:*
+            Resource:
+            - arn:aws:s3:::lab-other/other/*
+-   type: policy
+    name: policy-user-lab-prefix-writer-ListData
+    action: create_policy
+    owner_type: user
+    owner: lab-prefix-writer
+    document:
+        Version: '2012-10-17'
+        Statement:
+        -   Sid: ListData
+            Effect: Allow
+            Action:
+            - s3:ListBucket
+            Resource:
+            - arn:aws:s3:::lab-data
+-   type: policy
+    name: policy-user-lab-prefix-writer-ReadData
+    action: create_policy
+    owner_type: user
+    owner: lab-prefix-writer
+    document:
+        Version: '2012-10-17'
+        Statement:
+        -   Sid: ReadData
+            Effect: Allow
+            Action:
+            - s3:GetObject
+            Resource:
+            - arn:aws:s3:::lab-data/*
+-   type: policy
+    name: policy-user-lab-prefix-writer-ManageReports
+    action: create_policy
+    owner_type: user
+    owner: lab-prefix-writer
+    document:
+        Version: '2012-10-17'
+        Statement:
+        -   Sid: ManageReports
+            Effect: Allow
+            Action:
+            - s3:*
+            Resource:
+            - arn:aws:s3:::lab-data/reports/*
+-   type: policy
+    name: policy-user-lab-delete-only-DeleteData
+    action: create_policy
+    owner_type: user
+    owner: lab-delete-only
+    document:
+        Version: '2012-10-17'
+        Statement:
+        -   Sid: DeleteData
+            Effect: Allow
+            Action:
+            - s3:DeleteObject
+            Resource:
+            - arn:aws:s3:::lab-data/*
+-   type: policy_assignment
+    name: lab-reader
+    action: attach_policy
+    kind: user
+    policy: policy-user-lab-reader-ListOther
+-   type: policy_assignment
+    name: lab-reader
+    action: attach_policy
+    kind: user
+    policy: policy-user-lab-reader-ReadOther
+-   type: policy_assignment
+    name: lab-test
+    action: attach_policy
+    kind: user
+    policy: policy-user-lab-test-ManageAll
+-   type: policy_assignment
+    name: lab-test
+    action: attach_policy
+    kind: user
+    policy: policy-user-lab-test-ReadOnly
+-   type: policy_assignment
+    name: lab-prefix-writer
+    action: attach_policy
+    kind: user
+    policy: policy-user-lab-prefix-writer-ListData
+-   type: policy_assignment
+    name: lab-prefix-writer
+    action: attach_policy
+    kind: user
+    policy: policy-user-lab-prefix-writer-ManageReports
+-   type: policy_assignment
+    name: lab-prefix-writer
+    action: attach_policy
+    kind: user
+    policy: policy-user-lab-prefix-writer-ReadData
+-   type: policy_assignment
+    name: lab-delete-only
+    action: attach_policy
+    kind: user
+    policy: policy-user-lab-delete-only-DeleteData
+change:
+-   type: bucket
+    name: lab-public
+    action: set_anonymous_policy
+    document:
+        Version: '2012-10-17'
+        Statement:
+        -   Sid: PublicRead
+            Effect: Allow
+            Principal: '*'
+            Action:
+            - s3:GetObject
+            Resource:
+            - arn:aws:s3:::lab-public/*
+delete: []

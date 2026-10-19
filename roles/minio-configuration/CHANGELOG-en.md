@@ -1,5 +1,32 @@
 # Changes
 
+## 3.12.2 — 2026-10-19
+
+- Matrix distinguishes a row's own rules (L/R/W/D) from broader matching rules (l/r/w/d), including ListBucket and supported prefix conditions.
+- Explicit Allow takes uppercase when a broader Allow also applies. Denials use !R/!r according to Deny scope and still override Allow; unknown remains a standalone ?.
+- Added regressions for prefix rows introduced by other users, explicit/broader rules, denials and conditional listing. Updated the legend, both READMEs and lab examples.
+
+## 3.12.1 — 2026-10-19
+
+- Matrix rows show only rules covering the row's entire range; narrower grants and denials appear in their own rows without summary markers on broader rows.
+- Unknown calculations caused by unsupported rules use a standalone ? in the fixed L/R/W/D slot, without the action letter. No partial-permission marker is used.
+- Supported positive prefix comparisons are intersected; restricted listing grants appear only on their corresponding rows.
+- Updated the legend, lab examples, both READMEs and matrix checks.
+
+## 3.12.0 — 2026-10-19
+
+- Matrix Condition support for ListBucket: StringLike/StringEquals on s3:prefix, scalar/list values, literal prefixes and trailing StringLike wildcards.
+- Conditional Allow/Deny is evaluated over prefix-request ranges; conditions add rows and mixed ranges retain L?. Unsupported conditions remain explicitly unknown.
+- Added a lab-test conditional policy and lab/check-access.sh using minio-client: positive/negative checks, access-denial versus network-error detection and cleanup limited to its own objects.
+- Added unit and Ansible condition checks; access checks and real JSON collection passed against a separate temporary MinIO 20251015T172955Z using the RED OS client.
+
+## 3.11.1 — 2026-10-19
+
+- Combined bucket and object matrix rows: ListBucket appears in the L slot of bucket/* and prefix rows while still being evaluated against the original bucket ARN.
+- Shortened user headers to u:<name>, changed CSV delimiter to semicolon and fixed L/R/W/D slots with placeholders for missing permissions.
+- Added bucket/prefix* object prefixes. Unsupported resource masks no longer spread uncertainty to clearly unrelated buckets.
+- Notes include Action/Resource of limited rules. Added regressions for two direct policies, prefixes, bucket isolation and D alignment; updated both READMEs and Molecule assertions.
+
 ## 3.11.0 — 2026-10-19
 
 - Added `matrix` mode: a controller CSV of direct built-in user and anonymous access from the current cluster, without changing MinIO.

@@ -1,0 +1,7 @@
+---
+- name: Test MinIO configuration role on the local lab
+  hosts: minio_cluster
+  become: false
+  gather_facts: true
+  roles:
+    - role: minio-configuration

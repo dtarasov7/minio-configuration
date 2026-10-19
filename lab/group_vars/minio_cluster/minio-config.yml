@@ -1,0 +1,105 @@
+---
+# The MinIO server and this execution user's minio-client alias lab must already exist.
+minio_configuration_mode: apply
+minio_configuration_nodes_group: minio_cluster
+minio_configuration_delegate_host: localhost
+minio_configuration_alias: lab
+minio_configuration_mc_binary_path: /usr/bin/minio-client
+minio_configuration_policy_dir: /etc/minio-lab/policies
+minio_configuration_no_log: true
+minio_configuration_users_delete: false
+minio_configuration_protected_users:
+  - minioadmin
+  - minio_prometheus
+minio_configuration_groups: []
+minio_configuration_hashi_vault_path_password: ''
+# Optional secret source: override secret_key through a variable-level Vault lookup.
+# minio_configuration_hashi_vault_path_password: "secret=lab/data/minio"
+
+minio_configuration_matrix_path: "{{ playbook_dir }}/minio-access-matrix.csv"
+minio_configuration_export_path: "{{ playbook_dir }}/minio-inventory.yml"
+minio_configuration_dry_report_path: "{{ playbook_dir }}/minio-plan.yml"
+
+minio_configuration_backets:
+  - name: lab-data
+    anonymous: none
+    versioning: false
+  - name: lab-other
+    anonymous: none
+    versioning: false
+  - name: lab-public
+    versioning: false
+    anonymous_policy:
+      Version: '2012-10-17'
+      Statement:
+        - Sid: PublicRead
+          Effect: Allow
+          Principal: '*'
+          Action: [s3:GetObject]
+          Resource: ['arn:aws:s3:::lab-public/*']
+
+# These passwords are for the disposable local lab only.
+minio_configuration_users:
+  - name: lab-reader
+    secret_key: LabReader-Test-Only-123
+    status: enabled
+    groups: []
+    statements:
+      - Sid: ListOther
+        Effect: Allow
+        Action: [s3:ListBucket]
+        Resource: ['arn:aws:s3:::lab-other']
+      - Sid: ReadOther
+        Effect: Allow
+        Action: [s3:GetObject]
+        Resource: ['arn:aws:s3:::lab-other/*']
+      - Sid: DenyReadRestrict
+        Effect: Deny
+        Action: [s3:GetObject]
+        Resource: ['arn:aws:s3:::lab-other/restrict/*']
+  - name: lab-test
+    secret_key: Test-Only-123
+    status: enabled
+    groups: []
+    statements:
+      - Sid: ReadOnly
+        Effect: Allow
+        Action: [s3:GetObject]
+        Resource: ['arn:aws:s3:::lab-other/*']
+      - Sid: ManageAll
+        Effect: Allow
+        Action: [s3:*]
+        Resource: ['arn:aws:s3:::lab-other/other/*']
+      - Sid: ListOtherPrefix
+        Effect: Allow
+        Action: [s3:ListBucket, s3:ListBucketVersions]
+        Resource: ['arn:aws:s3:::lab-other']
+        Condition:
+          StringLike:
+            s3:prefix: ['other/*']
+  - name: lab-prefix-writer
+    secret_key: LabPrefix-Test-Only-123
+    status: enabled
+    groups: []
+    statements:
+      - Sid: ListData
+        Effect: Allow
+        Action: [s3:ListBucket]
+        Resource: ['arn:aws:s3:::lab-data']
+      - Sid: ReadData
+        Effect: Allow
+        Action: [s3:GetObject]
+        Resource: ['arn:aws:s3:::lab-data/*']
+      - Sid: ManageReports
+        Effect: Allow
+        Action: ['s3:*']
+        Resource: ['arn:aws:s3:::lab-data/reports/*']
+  - name: lab-delete-only
+    secret_key: LabDelete-Test-Only-123
+    status: enabled
+    groups: []
+    statements:
+      - Sid: DeleteData
+        Effect: Allow
+        Action: [s3:DeleteObject]
+        Resource: ['arn:aws:s3:::lab-data/*']

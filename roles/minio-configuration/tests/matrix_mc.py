@@ -11,13 +11,20 @@ if arguments == ['admin', 'info', 'production']:
 
 rule = {'Sid': 'Read', 'Effect': 'Allow', 'Action': 's3:GetObject', 'Resource': 'arn:aws:s3:::data/*'}
 responses = {
-    ('ls', 'production'): [{'key': 'data/'}],
+    ('ls', 'production'): [{'key': 'data/'}, {'key': 'other/'}],
     ('anonymous', 'get-json', 'production/data'): [{'anonymous': {'Statement': [dict(rule, Principal={'AWS': ['*']})]}}],
+    ('anonymous', 'get-json', 'production/other'): [{'permission': 'private'}],
     ('admin', 'user', 'list', 'production'): [
-        {'accessKey': 'reader', 'userStatus': 'enabled', 'policyName': 'read', 'memberOf': [{'name': 'staff', 'policies': ['group-deny']}]},
+        {'accessKey': 'reader', 'userStatus': 'enabled', 'policyName': 'read,prefix', 'memberOf': [{'name': 'staff', 'policies': ['group-deny']}]},
         {'accessKey': 'group-only', 'userStatus': 'enabled', 'memberOf': [{'name': 'staff', 'policies': ['group-read']}]},
-        {'accessKey': 'off', 'userStatus': 'disabled', 'policyName': 'read'}],
-    ('admin', 'policy', 'info', 'production', 'read'): [{'policyInfo': {'policy': {'Statement': [rule]}}}],
+        {'accessKey': 'off', 'userStatus': 'disabled', 'policyName': 'read'},
+        {'accessKey': 'simple', 'userStatus': 'enabled', 'policyName': 'simple'}],
+    ('admin', 'policy', 'info', 'production', 'read'): [{'policyInfo': {'policy': {'Statement': [rule, dict(rule, Action='s3:ListBucket', Resource='arn:aws:s3:::data')]}}}],
+    ('admin', 'policy', 'info', 'production', 'prefix'): [{'policyInfo': {'policy': {'Statement': [dict(rule, Action='s3:*', Resource='arn:aws:s3:::data/reports*')]}}}],
+    ('admin', 'policy', 'info', 'production', 'simple'): [{'policyInfo': {'policy': {'Statement': [
+        dict(rule, Resource='arn:aws:s3:::other/*'),
+        dict(rule, Action='s3:ListBucket', Resource='arn:aws:s3:::other',
+             Condition={'StringLike': {'s3:prefix': ['allowed/*']}})]}}}],
 }
 if not arguments or arguments[0] != '--json':
     sys.exit('Expected --json read')
